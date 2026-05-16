@@ -80,6 +80,7 @@ brews:
       owner: balintb
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
     homepage: "https://github.com/balintb/chezmoui"
     description: "A TUI for chezmoi."
     license: MIT
