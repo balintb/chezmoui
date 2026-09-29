@@ -171,22 +171,16 @@ func truncOrPad(s string, width int) string {
 	return s
 }
 
-func joinPanels(left, right string) string {
-	sep := lipgloss.NewStyle().Foreground(colorMuted).Render("│")
-	lLines := strings.Split(strings.TrimRight(left, "\n"), "\n")
-	rLines := strings.Split(strings.TrimRight(right, "\n"), "\n")
-	n := len(lLines)
-	if len(rLines) < n {
-		n = len(rLines)
+// renderPanels lays out two bordered panels that together fit within width. panelStyle contributes a one-cell border on each side, so the content width passed to Width must reserve those two columns.
+func renderPanels(left, right string, width int) string {
+	outer := (width - 1) / 2
+	inner := outer - 4
+	if inner < sideGutterWidth+5 {
+		inner = sideGutterWidth + 5
 	}
-	var b strings.Builder
-	for i := 0; i < n; i++ {
-		b.WriteString(lLines[i])
-		b.WriteString(" ")
-		b.WriteString(sep)
-		b.WriteString(" ")
-		b.WriteString(rLines[i])
-		b.WriteString("\n")
-	}
-	return b.String()
+	rows := alignLines(left, right)
+	l, r := renderSideBySide(rows, inner)
+	lp := panelStyle.Width(outer - 2).Render(strings.TrimRight(l, "\n"))
+	rp := panelStyle.Width(outer - 2).Render(strings.TrimRight(r, "\n"))
+	return lipgloss.JoinHorizontal(lipgloss.Top, lp, " ", rp)
 }

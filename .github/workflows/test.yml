@@ -7,17 +7,38 @@ on:
 
 jobs:
   unit:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: stable
       - run: go vet ./...
-      - run: go test ./...
+      - run: go test -race ./...
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: fuzz smoke run
+        run: |
+          go test ./internal/tui/ -run '^$' -fuzz=FuzzAlignLines -fuzztime=15s
+          go test ./internal/tui/ -run '^$' -fuzz=FuzzSanitizeForFilename -fuzztime=15s
+          go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseStatus -fuzztime=15s
 
   integration:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -27,5 +48,5 @@ jobs:
         run: |
           sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/bin"
           echo "$HOME/bin" >> "$GITHUB_PATH"
-      - run: go test -tags=integration ./...
-      - run: go test -tags='integration e2e' ./...
+      - run: go test -race -tags=integration ./...
+      - run: go test -race -tags='integration e2e' ./...

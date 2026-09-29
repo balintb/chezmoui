@@ -1,0 +1,39 @@
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   All   │   Modified (1)   │   Help                                                              │
+│ Keybindings                                                                                      │
+│                                                                                                  │
+│ Movement                                                                                         │
+│   ↑/k                  up                                                                        │
+│   ↓/j                  down                                                                      │
+│   pgup                 page up                                                                   │
+│   pgdn                 page down                                                                 │
+│   g                    top                                                                       │
+│   G                    bottom                                                                    │
+│   mouse wheel          scroll list / diff                                                        │
+│ Navigation                                                                                       │
+│   tab                  next tab                                                                  │
+│   shift+tab            prev tab                                                                  │
+│   click tab            switch tab                                                                │
+│   m                    modified-only                                                             │
+│   ?                    help                                                                      │
+│   esc                  back                                                                      │
+│   L                    re-detect dotfiles repo                                                   │
+│ Selection                                                                                        │
+│   space                select                                                                    │
+│   click row            move cursor                                                               │
+│ Actions                                                                                          │
+│   enter                view diff                                                                 │
+│   r                    re-add                                                                    │
+│   R                    refresh                                                                   │
+│   S                    start sync session                                                        │
+│ Sync session                                                                                     │
+│   k                    keep live (re-add)                                                        │
+│   v                    revert (apply, with backup)                                               │
+│   s                    skip                                                                      │
+│   ←/h                  previous entry                                                            │
+│   y                    confirm                                                                   │
+│   n/esc                cancel                                                                    │
+│ Other                                                                                            │
+│   q                    quit                                                                      │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

@@ -59,3 +59,42 @@ var keys = keyMap{
 
 	RelocateRepo: key.NewBinding(key.WithKeys("L"), key.WithHelp("L", "re-detect dotfiles repo")),
 }
+
+// helpGroup is a titled cluster of keybindings shown on the Help tab.
+type helpGroup struct {
+	title string
+	rows  [][2]string
+}
+
+// helpGroups returns the Help-tab contents. Bindings are referenced from the live keyMap so the displayed keys and descriptions cannot drift; a test asserts every binding in keyMap appears here.
+func helpGroups() []helpGroup {
+	b := func(binding key.Binding) [2]string {
+		h := binding.Help()
+		return [2]string{"  " + h.Key, h.Desc}
+	}
+	return []helpGroup{
+		{"Movement", [][2]string{
+			b(keys.Up), b(keys.Down), b(keys.PgUp), b(keys.PgDown), b(keys.Home), b(keys.End),
+			{"  mouse wheel", "scroll list / diff"},
+		}},
+		{"Navigation", [][2]string{
+			b(keys.NextTab), b(keys.PrevTab),
+			{"  click tab", "switch tab"},
+			b(keys.OnlyMod), b(keys.Help), b(keys.Back), b(keys.RelocateRepo),
+		}},
+		{"Selection", [][2]string{
+			b(keys.Toggle),
+			{"  click row", "move cursor"},
+		}},
+		{"Actions", [][2]string{
+			b(keys.View), b(keys.ReAdd), b(keys.Refresh), b(keys.SessionStart),
+		}},
+		{"Sync session", [][2]string{
+			b(keys.KeepLive), b(keys.Revert), b(keys.SkipEntry), b(keys.BackEntry),
+			b(keys.Confirm), b(keys.Cancel),
+		}},
+		{"Other", [][2]string{
+			b(keys.Quit),
+		}},
+	}
+}

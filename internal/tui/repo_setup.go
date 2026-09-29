@@ -46,11 +46,11 @@ func loadConfigCmd(store *config.Store) tea.Cmd {
 	}
 }
 
-func discoverRepoCmd(cli Backend) tea.Cmd {
+func discoverRepoCmd(repoInfo RepoInfo) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5e9)
 		defer cancel()
-		src, _ := cli.SourcePath(ctx)
+		src, _ := repoInfo.SourcePath(ctx)
 		return repoCandidatesMsg{candidates: repo.Discover(src)}
 	}
 }

@@ -68,3 +68,45 @@ func TestSave_CreatesParentDir(t *testing.T) {
 		t.Fatalf("save into nonexistent parent: %v", err)
 	}
 }
+
+func TestDefaultStore_UsesXDGConfigHome(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/custom/xdg")
+	s := DefaultStore()
+	if want := filepath.Join("/custom/xdg", "chezmoui", "config.json"); s.Path != want {
+		t.Errorf("DefaultStore path = %q, want %q", s.Path, want)
+	}
+}
+
+func TestDefaultDir_FallsBackToHome(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	got := defaultDir()
+	if want := filepath.Join(home, ".config", "chezmoui"); got != want {
+		t.Errorf("defaultDir = %q, want %q", got, want)
+	}
+}
+
+func TestStore_Load_MalformedJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := &Store{Path: path}
+	if _, err := s.Load(); err == nil {
+		t.Fatal("expected error for malformed config")
+	}
+}
+
+func TestStore_Save_WriteError(t *testing.T) {
+	// A file where a parent directory is expected makes MkdirAll fail.
+	parent := t.TempDir()
+	blocker := filepath.Join(parent, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := &Store{Path: filepath.Join(blocker, "config.json")}
+	if err := s.Save(Config{}); err == nil {
+		t.Fatal("expected save failure when parent is a file")
+	}
+}

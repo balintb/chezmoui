@@ -33,8 +33,25 @@ go run ./cmd/cmui
 
 ```sh
 go test ./...                          # unit
+go test -race ./...                    # unit with the race detector
 go test -tags=integration ./...        # + real chezmoi
 go test -tags='integration e2e' ./...  # + e2e
+```
+
+### Fuzzing
+
+```sh
+go test ./internal/tui/ -run '^$' -fuzz=FuzzAlignLines
+go test ./internal/tui/ -run '^$' -fuzz=FuzzSanitizeForFilename
+go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseStatus
+```
+
+### Golden files
+
+Rendered views are snapshot-tested under `internal/tui/testdata/`. Regenerate after intentional layout changes:
+
+```sh
+go test ./internal/tui -run TestGolden -update
 ```
 
 Backups for reverts go under `~/.cache/chezmoui/recoverable/`.

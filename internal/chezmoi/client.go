@@ -35,6 +35,23 @@ func New(opts ...Option) (*Client, error) {
 	return c, nil
 }
 
+// CommandError reports a failed chezmoi invocation, preserving the argv and captured stderr so callers can present actionable diagnostics.
+type CommandError struct {
+	Args   []string
+	Stderr string
+	Err    error
+}
+
+func (e *CommandError) Error() string {
+	cmd := "chezmoi " + strings.Join(e.Args, " ")
+	if e.Stderr != "" {
+		return cmd + ": " + e.Stderr
+	}
+	return cmd + ": " + e.Err.Error()
+}
+
+func (e *CommandError) Unwrap() error { return e.Err }
+
 func (c *Client) run(ctx context.Context, args ...string) ([]byte, error) {
 	full := append([]string{
 		"--no-pager",
@@ -49,11 +66,11 @@ func (c *Client) run(ctx context.Context, args ...string) ([]byte, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
+		return stdout.Bytes(), &CommandError{
+			Args:   args,
+			Stderr: strings.TrimSpace(stderr.String()),
+			Err:    err,
 		}
-		return stdout.Bytes(), fmt.Errorf("chezmoi %s: %s", strings.Join(args, " "), msg)
 	}
 	return stdout.Bytes(), nil
 }
@@ -122,8 +139,13 @@ func (c *Client) Status(ctx context.Context) ([]Status, error) {
 	if err != nil {
 		return nil, err
 	}
+	return ParseStatus(string(out)), nil
+}
+
+// ParseStatus parses the two-column output of `chezmoi status`. Lines shorter than four bytes are ignored.
+func ParseStatus(out string) []Status {
 	var statuses []Status
-	for _, line := range strings.Split(string(out), "\n") {
+	for _, line := range strings.Split(out, "\n") {
 		if len(line) < 4 {
 			continue
 		}
@@ -133,7 +155,7 @@ func (c *Client) Status(ctx context.Context) ([]Status, error) {
 			Path:   line[3:],
 		})
 	}
-	return statuses, nil
+	return statuses
 }
 
 func (c *Client) Cat(ctx context.Context, path string) (string, error) {

@@ -2,7 +2,9 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,7 +102,7 @@ type sessionDecisionDoneMsg struct {
 	snapshotPath string
 }
 
-func startSessionCmd(cli Backend, rows []row, snapshotDir string) tea.Cmd {
+func startSessionCmd(lister Lister, repo RepoInfo, rows []row, snapshotDir string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -111,8 +113,8 @@ func startSessionCmd(cli Backend, rows []row, snapshotDir string) tea.Cmd {
 			}
 			queue = append(queue, sessionEntry{target: r.target, absolute: r.absolute})
 		}
-		srcPath, _ := cli.SourcePath(ctx)
-		gs, _ := cli.GitStatus(ctx)
+		srcPath, _ := repo.SourcePath(ctx)
+		gs, _ := repo.GitStatus(ctx)
 		return sessionStartedMsg{
 			queue:          queue,
 			sourceRepoPath: srcPath,
@@ -122,13 +124,14 @@ func startSessionCmd(cli Backend, rows []row, snapshotDir string) tea.Cmd {
 	}
 }
 
-func loadSessionEntryCmd(cli Backend, cursor int, absPath string, reader func(string) ([]byte, error)) tea.Cmd {
+func loadSessionEntryCmd(cli Reader, cursor int, absPath string, reader func(string) ([]byte, error)) tea.Cmd {
 	return func() tea.Msg {
+		retry := loadSessionEntryCmd(cli, cursor, absPath, reader)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		target, err := cli.Cat(ctx, absPath)
 		if err != nil {
-			return errMsg{err}
+			return errMsg{err: opError{Op: "load session target", Target: absPath, Err: err}, retry: retry}
 		}
 		var live []byte
 		var liveMissing bool
@@ -138,7 +141,7 @@ func loadSessionEntryCmd(cli Backend, cursor int, absPath string, reader func(st
 		case os.IsNotExist(err), isDirReadError(err):
 			liveMissing = true
 		default:
-			return errMsg{err}
+			return errMsg{err: opError{Op: "read live file", Target: absPath, Err: err}, retry: retry}
 		}
 		rows := alignLines(target, string(live))
 		added, removed, loose := summarizeAlignment(rows)
@@ -154,45 +157,65 @@ func loadSessionEntryCmd(cli Backend, cursor int, absPath string, reader func(st
 	}
 }
 
-func keepLiveCmd(cli Backend, cursor int, absPath string) tea.Cmd {
+func keepLiveCmd(cli Mutator, cursor int, absPath string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		if err := cli.ReAdd(ctx, absPath); err != nil {
-			return errMsg{err}
+			return errMsg{err: opError{Op: "keep live (re-add)", Target: absPath, Err: err}, retry: keepLiveCmd(cli, cursor, absPath)}
 		}
 		return sessionDecisionDoneMsg{cursor: cursor, decision: decisionKept}
 	}
 }
 
-func revertCmd(cli Backend, cursor int, absPath, snapshotDir string, reader func(string) ([]byte, error)) tea.Cmd {
+func revertCmd(cli Mutator, cursor int, absPath, snapshotDir string, reader func(string) ([]byte, error), now func() time.Time) tea.Cmd {
 	return func() tea.Msg {
 		var snapshot string
 		if data, err := reader(absPath); err == nil {
-			if p, err := writeSnapshot(snapshotDir, absPath, data); err == nil {
+			if p, err := writeSnapshot(snapshotDir, absPath, data, now()); err == nil {
 				snapshot = p
 			}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		if err := cli.Apply(ctx, absPath); err != nil {
-			return errMsg{err}
+			return errMsg{err: opError{Op: "revert to source", Target: absPath, Err: err}, retry: revertCmd(cli, cursor, absPath, snapshotDir, reader, now)}
 		}
 		return sessionDecisionDoneMsg{cursor: cursor, decision: decisionReverted, snapshotPath: snapshot}
 	}
 }
 
-func writeSnapshot(dir, absPath string, data []byte) (string, error) {
+// writeSnapshot persists data under dir with a timestamped name derived from ts. A numeric suffix is added on collision so two snapshots of the same file within the same second never overwrite each other.
+func writeSnapshot(dir, absPath string, data []byte, ts time.Time) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	stamp := time.Now().UTC().Format("20060102T150405")
-	name := stamp + "_" + sanitizeForFilename(absPath)
-	full := filepath.Join(dir, name)
-	if err := os.WriteFile(full, data, 0o600); err != nil {
-		return "", err
+	stamp := ts.UTC().Format("20060102T150405.000000000")
+	base := stamp + "_" + sanitizeForFilename(absPath)
+	for i := 0; ; i++ {
+		name := base
+		if i > 0 {
+			name = fmt.Sprintf("%s.%d", base, i)
+		}
+		full := filepath.Join(dir, name)
+		f, err := os.OpenFile(full, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		if _, err := f.Write(data); err != nil {
+			f.Close()
+			os.Remove(full)
+			return "", err
+		}
+		if err := f.Close(); err != nil {
+			os.Remove(full)
+			return "", err
+		}
+		return full, nil
 	}
-	return full, nil
 }
 
 func sanitizeForFilename(p string) string {
@@ -211,12 +234,16 @@ func sanitizeForFilename(p string) string {
 	return out
 }
 
-func defaultSnapshotDir() string {
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		cache = os.TempDir()
+func defaultSnapshotDir(cacheDir string) string {
+	base := cacheDir
+	if base == "" {
+		cache, err := os.UserCacheDir()
+		if err != nil {
+			cache = os.TempDir()
+		}
+		base = cache
 	}
-	return filepath.Join(cache, "chezmoui", "recoverable")
+	return filepath.Join(base, "chezmoui", "recoverable")
 }
 
 func (m Model) viewSessionWelcome() string {

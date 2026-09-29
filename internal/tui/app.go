@@ -123,20 +123,43 @@ func sortRows(rows []row) {
 	})
 }
 
-type Backend interface {
+// Lister enumerates the managed targets and their drift status.
+type Lister interface {
 	Managed(ctx context.Context) ([]chezmoi.Entry, error)
 	Status(ctx context.Context) ([]chezmoi.Status, error)
+}
+
+// Reader loads target contents for diffing.
+type Reader interface {
 	Cat(ctx context.Context, path string) (string, error)
+}
+
+// Mutator changes the source state and/or the destination state.
+type Mutator interface {
 	ReAdd(ctx context.Context, paths ...string) error
 	Apply(ctx context.Context, paths ...string) error
+}
+
+// RepoInfo reports source-repository locations and git state.
+type RepoInfo interface {
 	SourcePath(ctx context.Context) (string, error)
 	GitStatus(ctx context.Context) (chezmoi.GitStatus, error)
+}
+
+// Backend is the composite of all chezmoi operations used by the TUI.
+type Backend interface {
+	Lister
+	Reader
+	Mutator
+	RepoInfo
 }
 
 type Model struct {
 	cli         Backend
 	readFile    func(string) ([]byte, error)
 	configStore *config.Store
+	now         func() time.Time
+	cacheDir    string
 
 	repoPath  string
 	repoSetup repoSetupData
@@ -168,6 +191,7 @@ type Model struct {
 	width, height int
 	status        string
 	err           error
+	retry         tea.Cmd
 	loading       bool
 }
 
@@ -175,6 +199,7 @@ func NewModel(cli Backend) Model {
 	return Model{
 		cli:         cli,
 		readFile:    os.ReadFile,
+		now:         time.Now,
 		configStore: config.DefaultStore(),
 		state:       viewLoading,
 		selected:    map[string]bool{},
@@ -192,6 +217,18 @@ func (m Model) WithReadFile(f func(string) ([]byte, error)) Model {
 	return m
 }
 
+// WithNow overrides the clock used for snapshot timestamps. Tests inject a fixed clock to keep filenames deterministic.
+func (m Model) WithNow(now func() time.Time) Model {
+	m.now = now
+	return m
+}
+
+// WithCacheDir overrides the base cache directory used for default snapshot storage. An empty value falls back to the OS user cache directory.
+func (m Model) WithCacheDir(dir string) Model {
+	m.cacheDir = dir
+	return m
+}
+
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(loadEntriesCmd(m.cli), loadConfigCmd(m.configStore))
 }
@@ -205,21 +242,24 @@ type sideLoadedMsg struct {
 	liveMissing bool
 }
 type reAddDoneMsg struct{ count int }
-type errMsg struct{ err error }
+type errMsg struct {
+	err   error
+	retry tea.Cmd
+}
 
 func (e errMsg) Error() string { return e.err.Error() }
 
-func loadEntriesCmd(cli Backend) tea.Cmd {
+func loadEntriesCmd(cli Lister) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		entries, err := cli.Managed(ctx)
 		if err != nil {
-			return errMsg{err}
+			return errMsg{err: opError{Op: "list managed targets", Err: err}, retry: loadEntriesCmd(cli)}
 		}
 		statuses, err := cli.Status(ctx)
 		if err != nil {
-			return errMsg{err}
+			return errMsg{err: opError{Op: "read status", Err: err}, retry: loadEntriesCmd(cli)}
 		}
 		stByPath := map[string]chezmoi.Status{}
 		for _, s := range statuses {
@@ -246,13 +286,14 @@ func loadEntriesCmd(cli Backend) tea.Cmd {
 	}
 }
 
-func loadSideCmd(cli Backend, absPath, displayPath string, reader func(string) ([]byte, error)) tea.Cmd {
+func loadSideCmd(cli Reader, absPath, displayPath string, reader func(string) ([]byte, error)) tea.Cmd {
 	return func() tea.Msg {
+		retry := loadSideCmd(cli, absPath, displayPath, reader)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		target, err := cli.Cat(ctx, absPath)
 		if err != nil {
-			return errMsg{err}
+			return errMsg{err: opError{Op: "load target contents", Target: absPath, Err: err}, retry: retry}
 		}
 		var live []byte
 		var liveMissing bool
@@ -262,7 +303,7 @@ func loadSideCmd(cli Backend, absPath, displayPath string, reader func(string) (
 		case os.IsNotExist(err), isDirReadError(err):
 			liveMissing = true
 		default:
-			return errMsg{err}
+			return errMsg{err: opError{Op: "read live file", Target: absPath, Err: err}, retry: retry}
 		}
 		return sideLoadedMsg{
 			absolute: absPath, displayPath: displayPath,
@@ -271,12 +312,13 @@ func loadSideCmd(cli Backend, absPath, displayPath string, reader func(string) (
 	}
 }
 
-func reAddCmd(cli Backend, paths []string) tea.Cmd {
+func reAddCmd(cli Mutator, paths []string) tea.Cmd {
 	return func() tea.Msg {
+		retry := reAddCmd(cli, paths)
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		if err := cli.ReAdd(ctx, paths...); err != nil {
-			return errMsg{err}
+			return errMsg{err: opError{Op: "re-add", Target: strings.Join(paths, ", "), Err: err}, retry: retry}
 		}
 		return reAddDoneMsg{count: len(paths)}
 	}
@@ -289,14 +331,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		bw, bh := m.bodyDims()
 		m.vp = viewport.New(bw, bh)
-		if m.state == viewSideBySide {
+		switch {
+		case m.state == viewSideBySide:
 			m.vp.SetContent(m.renderSidePanels())
+		case m.session.state == sessionReview:
+			m.vp.SetContent(m.renderSessionPanels())
 		}
 		return m, nil
 
 	case entriesLoadedMsg:
 		m.rows = msg.rows
 		m.loading = false
+		m.err = nil
+		m.retry = nil
 		m.state = viewList
 		m.recomputeVisible()
 		if m.cursor >= len(m.visibleIdxs) {
@@ -315,6 +362,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.vp.SetContent(m.renderSidePanels())
 		m.vp.GotoTop()
 		m.state = viewSideBySide
+		m.err = nil
+		m.retry = nil
+		m.loading = false
 		return m, nil
 
 	case reAddDoneMsg:
@@ -322,17 +372,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selected = map[string]bool{}
 		m.pendingPaths = nil
 		m.confirmMsg = ""
+		m.err = nil
+		m.retry = nil
 		m.loading = true
 		return m, loadEntriesCmd(m.cli)
 
 	case errMsg:
 		m.err = msg.err
+		m.retry = msg.retry
 		m.loading = false
 		m.confirmMsg = ""
 		m.pendingPaths = nil
 		m.session.working = false
 		return m, nil
-
 	case configLoadedMsg:
 		if msg.loadErr != nil {
 			m.status = "config load: " + msg.loadErr.Error()
@@ -381,6 +433,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.vp.SetContent(m.renderSessionPanels())
 			m.vp.GotoTop()
 		}
+		m.err = nil
+		m.retry = nil
 		return m, nil
 
 	case sessionDecisionDoneMsg:
@@ -391,6 +445,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.session.working = false
+		m.err = nil
+		m.retry = nil
 		return m, m.advanceSession()
 
 	case tea.MouseMsg:
@@ -403,6 +459,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.err != nil {
+		return m.handleErrorKey(msg)
+	}
 	if m.confirmMsg != "" {
 		switch {
 		case key.Matches(msg, keys.Confirm):
@@ -506,6 +565,11 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Refresh):
 		m.loading = true
 		m.err = nil
+		if m.retry != nil {
+			cmd := m.retry
+			m.retry = nil
+			return m, cmd
+		}
 		return m, loadEntriesCmd(m.cli)
 	case key.Matches(msg, keys.View):
 		if r, ok := m.cursorRow(); ok {
@@ -607,7 +671,7 @@ func (m Model) onlyMod() bool { return m.activeTab == tabModified }
 func (m Model) startSession() (Model, tea.Cmd) {
 	m.session.state = sessionWelcome
 	if m.session.snapshotDir == "" {
-		m.session.snapshotDir = defaultSnapshotDir()
+		m.session.snapshotDir = defaultSnapshotDir(m.cacheDir)
 	}
 	return m, nil
 }
@@ -647,16 +711,7 @@ func (m Model) renderSessionPanels() string {
 		return ""
 	}
 	bw, _ := m.bodyDims()
-	panelOuterW := (bw - 1) / 2
-	panelInnerW := panelOuterW - 4
-	if panelInnerW < sideGutterWidth+5 {
-		panelInnerW = sideGutterWidth + 5
-	}
-	rows := alignLines(e.target_contents, e.live_contents)
-	left, right := renderSideBySide(rows, panelInnerW)
-	leftPanel := panelStyle.Width(panelOuterW).Render(strings.TrimRight(left, "\n"))
-	rightPanel := panelStyle.Width(panelOuterW).Render(strings.TrimRight(right, "\n"))
-	return lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, " ", rightPanel)
+	return renderPanels(e.target_contents, e.live_contents, bw)
 }
 
 func (m Model) handleSessionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -665,7 +720,7 @@ func (m Model) handleSessionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, keys.Confirm):
 			if len(m.session.queue) == 0 {
-				return m, startSessionCmd(m.cli, m.rows, m.session.snapshotDir)
+				return m, startSessionCmd(m.cli, m.cli, m.rows, m.session.snapshotDir)
 			}
 			m.session.state = sessionReview
 			return m, m.loadCurrentSessionEntry()
@@ -695,7 +750,7 @@ func (m Model) handleSessionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.session.working = true
-			return m, revertCmd(m.cli, m.session.cursor, e.absolute, m.session.snapshotDir, m.readFile)
+			return m, revertCmd(m.cli, m.session.cursor, e.absolute, m.session.snapshotDir, m.readFile, m.now)
 		case key.Matches(msg, keys.SkipEntry):
 			if e, ok := m.session.entry(); ok {
 				m.session.queue[m.session.cursor].decision = decisionSkipped
@@ -866,8 +921,7 @@ func (m Model) viewBody() string {
 	case m.loading:
 		return mutedStyle.Render("loading…")
 	case m.err != nil:
-		return errorStyle.Render("error: "+m.err.Error()) + "\n\n" +
-			mutedStyle.Render("press R to retry · q to quit")
+		return m.viewError()
 	case m.session.state == sessionWelcome:
 		return m.viewSessionWelcome()
 	case m.session.state == sessionReview:
@@ -1040,16 +1094,7 @@ func (m Model) contextHelp() string {
 
 func (m Model) renderSidePanels() string {
 	bw, _ := m.bodyDims()
-	panelOuterW := (bw - 1) / 2
-	panelInnerW := panelOuterW - 4
-	if panelInnerW < sideGutterWidth+5 {
-		panelInnerW = sideGutterWidth + 5
-	}
-	rows := alignLines(m.sideTarget, m.sideLive)
-	left, right := renderSideBySide(rows, panelInnerW)
-	leftPanel := panelStyle.Width(panelOuterW).Render(strings.TrimRight(left, "\n"))
-	rightPanel := panelStyle.Width(panelOuterW).Render(strings.TrimRight(right, "\n"))
-	return lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, " ", rightPanel)
+	return renderPanels(m.sideTarget, m.sideLive, bw)
 }
 
 func (m Model) viewSidePane() string {
@@ -1099,45 +1144,13 @@ func (m Model) viewConfirmModal() string {
 }
 
 func (m Model) viewHelpPage() string {
-	rows := [][2]string{
-		{"Movement", ""},
-		{"  ↑ / k", "up"},
-		{"  ↓ / j", "down"},
-		{"  pgup / ctrl+u", "page up"},
-		{"  pgdn / ctrl+d", "page down"},
-		{"  g / G", "top / bottom"},
-		{"  mouse wheel", "scroll list / diff"},
-		{"Navigation", ""},
-		{"  tab / shift+tab", "next / prev tab"},
-		{"  click tab", "switch tab"},
-		{"  m", "jump to Modified tab"},
-		{"  ?", "toggle Help tab"},
-		{"  esc", "back / leave help"},
-		{"Selection", ""},
-		{"  space", "select / deselect"},
-		{"  click row", "move cursor"},
-		{"Actions", ""},
-		{"  enter / d / s", "side-by-side diff"},
-		{"  r", "re-add (live → source)"},
-		{"  R", "refresh"},
-		{"  S", "start sync session"},
-		{"Sync session", ""},
-		{"  k", "keep live (re-add)"},
-		{"  v", "revert to source (with backup)"},
-		{"  s", "skip"},
-		{"  ← / h", "previous entry"},
-		{"  esc", "end session"},
-		{"Other", ""},
-		{"  q / ctrl+c", "quit"},
-	}
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Keybindings") + "\n\n")
-	for _, r := range rows {
-		if r[1] == "" {
-			b.WriteString(sectionHeaderStyle.Render(r[0]) + "\n")
-			continue
+	for _, g := range helpGroups() {
+		b.WriteString(sectionHeaderStyle.Render(g.title) + "\n")
+		for _, r := range g.rows {
+			b.WriteString(fmt.Sprintf("%-22s %s\n", r[0], mutedStyle.Render(r[1])))
 		}
-		b.WriteString(fmt.Sprintf("%-22s %s\n", r[0], mutedStyle.Render(r[1])))
 	}
 	return b.String()
 }
