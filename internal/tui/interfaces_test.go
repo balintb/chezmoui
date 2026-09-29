@@ -11,6 +11,7 @@ import (
 var (
 	_ Lister   = (*stubBackend)(nil)
 	_ Reader   = (*stubBackend)(nil)
+	_ Differ   = (*stubBackend)(nil)
 	_ Mutator  = (*stubBackend)(nil)
 	_ RepoInfo = (*stubBackend)(nil)
 	_ Backend  = (*stubBackend)(nil)
@@ -40,7 +41,7 @@ type readerOnly struct{ contents string }
 func (r readerOnly) Cat(context.Context, string) (string, error) { return r.contents, nil }
 
 func TestLoadSideCmd_AcceptsReaderOnly(t *testing.T) {
-	cmd := loadSideCmd(readerOnly{contents: "target\n"}, "/x", ".x", func(string) ([]byte, error) {
+	cmd := loadSideCmd(readerOnly{contents: "target\n"}, nil, "/x", ".x", func(string) ([]byte, error) {
 		return []byte("live\n"), nil
 	})
 	msg := cmd()
@@ -70,5 +71,18 @@ func TestReAddCmd_AcceptsMutatorOnly(t *testing.T) {
 	}
 	if len(m.reAdded) != 1 || len(m.reAdded[0]) != 2 {
 		t.Errorf("re-add not forwarded: %#v", m.reAdded)
+	}
+}
+
+// differOnly implements Differ and nothing else.
+type differOnly struct{ out string }
+
+func (d differOnly) Diff(context.Context, string, bool) (string, error) { return d.out, nil }
+
+func TestApplyCmd_AcceptsMutatorOnly(t *testing.T) {
+	m := &mutatorOnly{}
+	msg := applyCmd(m, []string{"/a"})()
+	if _, ok := msg.(applyDoneMsg); !ok {
+		t.Fatalf("want applyDoneMsg, got %T", msg)
 	}
 }

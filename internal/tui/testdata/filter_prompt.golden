@@ -1,14 +1,10 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │   All   │   Modified (1)   │   Help                                                              │
-│ ● 1 modified  + 1 add  − 0 delete  · 1 clean                                                     │
+│ ● 1 modified  + 1 add  − 0 delete  · 1 clean  filter: btop                                       │
 │                                                                                                  │
 │ Modified                                                                                         │
 │     ●  .config/btop/btop.conf                                                                    │
-│ Will add                                                                                         │
-│     +  .bashrc                                                                                   │
-│ Clean                                                                                            │
-│     ·  .vimrc                                                                                    │
 │                                                                                                  │
-│ /home/u/.config/btop/btop.conf                                                                   │
-│ enter view · space select · / filter · r re-add · a apply · S session · ? help · q quit          │
+│ filter: btop                                                                                     │
+│                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

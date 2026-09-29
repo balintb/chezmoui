@@ -508,3 +508,87 @@ func TestE2E_RegressionAbsolutePathPlumbing(t *testing.T) {
 		t.Fatalf("expected viewSideBySide, got %v", m.state)
 	}
 }
+
+func TestE2E_Filter_NarrowsRealManagedList(t *testing.T) {
+	m, _, home := e2eFixture(t)
+	srcDir := filepath.Join(home, ".local", "share", "chezmoi")
+	if err := os.WriteFile(filepath.Join(srcDir, "dot_other"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".other"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, msg := range drainBatch(m.Init()) {
+		m, _ = step(t, m, msg)
+	}
+	if len(m.rows) < 2 {
+		t.Fatalf("expected >=2 managed rows, got %d", len(m.rows))
+	}
+
+	m, _ = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	for _, r := range "testfile" {
+		m, _ = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if len(m.visibleIdxs) != 1 {
+		t.Fatalf("filter should narrow to 1 row, got %d", len(m.visibleIdxs))
+	}
+	if m.rows[m.visibleIdxs[0]].target != ".testfile" {
+		t.Errorf("wrong row visible: %q", m.rows[m.visibleIdxs[0]].target)
+	}
+}
+
+func TestE2E_Apply_OverwritesLiveFromSource(t *testing.T) {
+	m, _, home := e2eFixture(t)
+
+	for _, msg := range drainBatch(m.Init()) {
+		m, _ = step(t, m, msg)
+	}
+	m, _ = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	if len(m.visibleIdxs) != 1 {
+		t.Fatalf("expected single modified row, got %d", len(m.visibleIdxs))
+	}
+
+	m, _ = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if m.confirmMsg == "" {
+		t.Fatal("expected confirm prompt after a")
+	}
+	m, cmd := step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	msg := drainCmd(t, cmd)
+	if e, ok := msg.(errMsg); ok {
+		t.Fatalf("apply failed: %v", e.err)
+	}
+	m, _ = step(t, m, msg)
+
+	live, err := os.ReadFile(filepath.Join(home, ".testfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(live) != "source content\n" {
+		t.Errorf("live after apply = %q, want source content", live)
+	}
+}
+
+func TestE2E_UnifiedDiff_Toggle(t *testing.T) {
+	m, _, _ := e2eFixture(t)
+
+	for _, msg := range drainBatch(m.Init()) {
+		m, _ = step(t, m, msg)
+	}
+	m, _ = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	m, cmd := step(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	msg := drainCmd(t, cmd)
+	if e, ok := msg.(errMsg); ok {
+		t.Fatalf("side-by-side load failed: %v", e.err)
+	}
+	m, _ = step(t, m, msg)
+
+	m, _ = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	if !m.sideUnified {
+		t.Fatal("u should enable unified mode")
+	}
+	view := stripANSI(m.vp.View())
+	if !strings.Contains(view, "@@") {
+		t.Errorf("unified view should contain hunk headers:\n%s", view)
+	}
+}

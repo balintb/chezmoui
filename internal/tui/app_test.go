@@ -18,11 +18,14 @@ type stubBackend struct {
 	status  []chezmoi.Status
 	cat     string
 	catErr  error
+	diff    string
+	diffErr error
 
 	sourcePath string
 	gitStatus  chezmoi.GitStatus
 
 	catCalls   []string
+	diffCalls  []string
 	reAddCalls [][]string
 	applyCalls [][]string
 	reAddErr   error
@@ -38,6 +41,10 @@ func (s *stubBackend) Status(context.Context) ([]chezmoi.Status, error) {
 func (s *stubBackend) Cat(_ context.Context, path string) (string, error) {
 	s.catCalls = append(s.catCalls, path)
 	return s.cat, s.catErr
+}
+func (s *stubBackend) Diff(_ context.Context, path string, _ bool) (string, error) {
+	s.diffCalls = append(s.diffCalls, path)
+	return s.diff, s.diffErr
 }
 func (s *stubBackend) ReAdd(_ context.Context, paths ...string) error {
 	cp := make([]string, len(paths))

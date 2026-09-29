@@ -103,6 +103,19 @@ func TestGolden_ErrorView(t *testing.T) {
 	assertGolden(t, "error_view", goldenView(t, m, 100, 20))
 }
 
+func TestGolden_FilterPrompt(t *testing.T) {
+	m := loadedModel(t, sampleBackend())
+	m, _ = press(t, m, '/')
+	m, _ = typeRunes(m, "btop")
+	assertGolden(t, "filter_prompt", goldenView(t, m, 100, 24))
+}
+
+func TestGolden_UnifiedDiff(t *testing.T) {
+	m, _ := sideFixture(t)
+	m, _ = press(t, m, 'u')
+	assertGolden(t, "unified_diff", goldenView(t, m, 100, 24))
+}
+
 type errString string
 
 func (e errString) Error() string { return string(e) }

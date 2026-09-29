@@ -15,6 +15,7 @@
 │   shift+tab            prev tab                                                                  │
 │   click tab            switch tab                                                                │
 │   m                    modified-only                                                             │
+│   /                    filter                                                                    │
 │   ?                    help                                                                      │
 │   esc                  back                                                                      │
 │   L                    re-detect dotfiles repo                                                   │
@@ -23,9 +24,14 @@
 │   click row            move cursor                                                               │
 │ Actions                                                                                          │
 │   enter                view diff                                                                 │
-│   r                    re-add                                                                    │
+│   r                    re-add (live → source)                                                    │
+│   a                    apply (source → live)                                                     │
 │   R                    refresh                                                                   │
 │   S                    start sync session                                                        │
+│ Diff                                                                                             │
+│   u                    toggle unified/side-by-side                                               │
+│   ]                    next hunk                                                                 │
+│   [                    prev hunk                                                                 │
 │ Sync session                                                                                     │
 │   k                    keep live (re-add)                                                        │
 │   v                    revert (apply, with backup)                                               │

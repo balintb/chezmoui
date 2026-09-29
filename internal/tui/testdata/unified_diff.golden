@@ -1,0 +1,25 @@
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   All   │   Modified (1)   │   Help                                                              │
+│ .config/btop/btop.conf  +2  −1                                                                   │
+│ unified diff · 2 hunk(s)                                                                         │
+│ diff --git a/dot_bashrc b/dot_bashrc                                                             │
+│ index 111..222 100644                                                                            │
+│ --- a/dot_bashrc                                                                                 │
+│ +++ b/dot_bashrc                                                                                 │
+│ @@ -1,3 +1,4 @@                                                                                  │
+│  export PATH=/usr/bin                                                                            │
+│ -export EDITOR=vi                                                                                │
+│ +export EDITOR=nvim                                                                              │
+│ +export PAGER=less                                                                               │
+│  alias ll='ls -la'                                                                               │
+│ @@ -10,2 +11,2 @@                                                                                │
+│  keep me                                                                                         │
+│ -drop this                                                                                       │
+│ +add this                                                                                        │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│ ↑/↓ scroll · [/] hunk · u side-by-side · r re-add · a apply · esc back                           │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
