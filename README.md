@@ -4,8 +4,12 @@ A simple TUI for [chezmoi](https://www.chezmoi.io/).
 
 ## What it does
 
-- side-by-side diff with line numbers and synced scrolling
+- side-by-side or unified diff with line numbers and synced scrolling
 - notices logical vs. semantic differences
+- filter the managed list by path with `/`
+- re-add (live → source) or apply (source → live), single or bulk
+- undo the last action from a local snapshot
+- source-state attribute chips (template, private, executable, encrypted, scripts, …)
 - sync session: walk through every drifted file, decide keep/revert/skip per file
 - finds your dotfiles repo
 
@@ -33,8 +37,27 @@ go run ./cmd/cmui
 
 ```sh
 go test ./...                          # unit
+go test -race ./...                    # unit with the race detector
 go test -tags=integration ./...        # + real chezmoi
 go test -tags='integration e2e' ./...  # + e2e
+```
+
+### Fuzzing
+
+```sh
+go test ./internal/tui/ -run '^$' -fuzz=FuzzAlignLines
+go test ./internal/tui/ -run '^$' -fuzz=FuzzSanitizeForFilename
+go test ./internal/tui/ -run '^$' -fuzz=FuzzParseUnified
+go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseStatus
+go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseAttributes
+```
+
+### Golden files
+
+Rendered views are snapshot-tested under `internal/tui/testdata/`. Regenerate after intentional layout changes:
+
+```sh
+go test ./internal/tui -run TestGolden -update
 ```
 
 Backups for reverts go under `~/.cache/chezmoui/recoverable/`.

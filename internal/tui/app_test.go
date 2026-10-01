@@ -18,11 +18,14 @@ type stubBackend struct {
 	status  []chezmoi.Status
 	cat     string
 	catErr  error
+	diff    string
+	diffErr error
 
 	sourcePath string
 	gitStatus  chezmoi.GitStatus
 
 	catCalls   []string
+	diffCalls  []string
 	reAddCalls [][]string
 	applyCalls [][]string
 	reAddErr   error
@@ -38,6 +41,10 @@ func (s *stubBackend) Status(context.Context) ([]chezmoi.Status, error) {
 func (s *stubBackend) Cat(_ context.Context, path string) (string, error) {
 	s.catCalls = append(s.catCalls, path)
 	return s.cat, s.catErr
+}
+func (s *stubBackend) Diff(_ context.Context, path string, _ bool) (string, error) {
+	s.diffCalls = append(s.diffCalls, path)
+	return s.diff, s.diffErr
 }
 func (s *stubBackend) ReAdd(_ context.Context, paths ...string) error {
 	cp := make([]string, len(paths))
@@ -61,9 +68,9 @@ func (s *stubBackend) GitStatus(context.Context) (chezmoi.GitStatus, error) {
 func sampleBackend() *stubBackend {
 	return &stubBackend{
 		managed: []chezmoi.Entry{
-			{Target: ".bashrc", Absolute: "/home/u/.bashrc", SourceRelative: "dot_bashrc"},
-			{Target: ".config/btop/btop.conf", Absolute: "/home/u/.config/btop/btop.conf", SourceRelative: "dot_config/btop/btop.conf"},
-			{Target: ".vimrc", Absolute: "/home/u/.vimrc", SourceRelative: "dot_vimrc"},
+			{Target: ".bashrc", Absolute: "/home/u/.bashrc", SourceRelative: "private_dot_bashrc", SourceAbsolute: "/src/private_dot_bashrc", Attributes: chezmoi.ParseAttributes("private_dot_bashrc")},
+			{Target: ".config/btop/btop.conf", Absolute: "/home/u/.config/btop/btop.conf", SourceRelative: "dot_config/btop/btop.conf.tmpl", SourceAbsolute: "/src/dot_config/btop/btop.conf.tmpl", Attributes: chezmoi.ParseAttributes("dot_config/btop/btop.conf.tmpl")},
+			{Target: ".vimrc", Absolute: "/home/u/.vimrc", SourceRelative: "dot_vimrc", SourceAbsolute: "/src/dot_vimrc", Attributes: chezmoi.ParseAttributes("dot_vimrc")},
 		},
 		status: []chezmoi.Status{
 			{Source: ' ', Target: 'M', Path: ".config/btop/btop.conf"},

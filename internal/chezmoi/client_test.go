@@ -27,35 +27,7 @@ func TestStatus_Modified(t *testing.T) {
 }
 
 func parseStatusLines(out string) []Status {
-	c := &Client{}
-	_ = c
-	var statuses []Status
-	for _, line := range splitLines(out) {
-		if len(line) < 4 {
-			continue
-		}
-		statuses = append(statuses, Status{
-			Source: StatusCode(line[0]),
-			Target: StatusCode(line[1]),
-			Path:   line[3:],
-		})
-	}
-	return statuses
-}
-
-func splitLines(s string) []string {
-	var lines []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			lines = append(lines, s[start:i])
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
-	}
-	return lines
+	return ParseStatus(out)
 }
 
 func TestParseStatusLines_RealOutput(t *testing.T) {

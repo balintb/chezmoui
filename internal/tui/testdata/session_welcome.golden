@@ -1,0 +1,14 @@
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ⚡ Sync session                                                                                  │
+│ Sync Session                                                                                     │
+│                                                                                                  │
+│ You have 2 files with drift.                                                                     │
+│                                                                                                  │
+│ For each file, choose what to do with your live edits:                                           │
+│                                                                                                  │
+│   ●  keep live    — re-add into source (your edits win)                                          │
+│   ●  revert       — chezmoi apply (source wins; backup kept)                                     │
+│   ●  skip         — defer until next time                                                        │
+│                                                                                                  │
+│ [ enter ] start    [ esc ] back                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

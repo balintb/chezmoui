@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestAlignLines_Identical(t *testing.T) {
@@ -125,6 +127,21 @@ func TestRenderSideBySide_LineCountsMatch(t *testing.T) {
 	}
 }
 
+func TestRenderPanels_FitsWithinWidth_Regression(t *testing.T) {
+	for _, width := range []int{60, 80, 96, 100, 120, 200} {
+		got := stripANSI(renderPanels("left line\n", "right line\n", width))
+		lines := strings.Split(got, "\n")
+		if len(lines) == 0 {
+			t.Fatalf("width %d: empty output", width)
+		}
+		for i, ln := range lines {
+			if w := lipgloss.Width(ln); w > width {
+				t.Errorf("width %d: line %d is %d cells wide, overflows: %q", width, i, w, ln)
+			}
+		}
+	}
+}
+
 func TestRenderSideBySide_PadsToColumnWidth(t *testing.T) {
 	const colW = 30
 	rows := []alignedRow{{Left: "ab", Right: "xy", LeftPresent: true, RightPresent: true, LeftNum: 1, RightNum: 1}}
@@ -191,11 +208,11 @@ func TestRenderSideBySide_FillSpansFullColumn(t *testing.T) {
 
 func TestSummarizeAlignment(t *testing.T) {
 	rows := []alignedRow{
-		{LeftPresent: true, RightPresent: true},  // matched
-		{RightPresent: true},                     // added
-		{LeftPresent: true},                      // removed
-		{RightPresent: true},                     // added
-		{LeftPresent: true, RightPresent: true},  // matched
+		{LeftPresent: true, RightPresent: true}, // matched
+		{RightPresent: true},                    // added
+		{LeftPresent: true},                     // removed
+		{RightPresent: true},                    // added
+		{LeftPresent: true, RightPresent: true}, // matched
 	}
 	added, removed, loose := summarizeAlignment(rows)
 	if added != 2 || removed != 1 || loose != 0 {

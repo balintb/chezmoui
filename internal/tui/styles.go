@@ -76,4 +76,12 @@ var (
 			Border(lipgloss.RoundedBorder(), true).
 			BorderForeground(colorMuted).
 			Padding(0, 1)
+
+	filterChipStyle = lipgloss.NewStyle().
+			Foreground(colorAccent).
+			Bold(true)
+
+	attrStyle = lipgloss.NewStyle().
+			Foreground(colorWarn).
+			Bold(true)
 )

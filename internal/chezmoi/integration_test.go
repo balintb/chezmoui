@@ -278,3 +278,54 @@ func TestIntegration_ReAdd_RejectsEmptyPaths(t *testing.T) {
 		t.Fatal("ReAdd with no paths must error to prevent re-adding everything")
 	}
 }
+
+func TestIntegration_Managed_ParsesAttributes(t *testing.T) {
+	home := t.TempDir()
+	srcDir := filepath.Join(home, ".local", "share", "chezmoi")
+	if err := os.MkdirAll(filepath.Join(srcDir, "private_dot_ssh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"private_dot_secret":     "s\n",
+		"executable_dot_script":  "#!/bin/sh\n",
+		"dot_config.tmpl":        "{{ .chezmoi.hostname }}\n",
+		"private_dot_ssh/config": "Host *\n",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(srcDir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cli := newTestClient(t, home)
+	entries, err := cli.Managed(context.Background())
+	if err != nil {
+		t.Fatalf("Managed: %v", err)
+	}
+	attrsByTarget := map[string][]Attribute{}
+	for _, e := range entries {
+		attrsByTarget[e.Target] = e.Attributes
+	}
+	checks := []struct {
+		target string
+		want   Attribute
+	}{
+		{".secret", AttrPrivate},
+		{".script", AttrExecutable},
+		{".config", AttrTemplate},
+		{".ssh/config", AttrPrivate},
+	}
+	for _, c := range checks {
+		if !containsAttr(attrsByTarget[c.target], c.want) {
+			t.Errorf("%s attributes %v missing %q", c.target, attrsByTarget[c.target], c.want)
+		}
+	}
+}
+
+func containsAttr(attrs []Attribute, want Attribute) bool {
+	for _, a := range attrs {
+		if a == want {
+			return true
+		}
+	}
+	return false
+}
