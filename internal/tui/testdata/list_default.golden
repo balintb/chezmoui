@@ -3,12 +3,12 @@
 │ ● 1 modified  + 1 add  − 0 delete  · 1 clean                                                     │
 │                                                                                                  │
 │ Modified                                                                                         │
-│     ●  .config/btop/btop.conf                                                                    │
+│     ●  .config/btop/btop.conf t                                                                  │
 │ Will add                                                                                         │
-│     +  .bashrc                                                                                   │
+│     +  .bashrc p                                                                                 │
 │ Clean                                                                                            │
 │     ·  .vimrc                                                                                    │
 │                                                                                                  │
-│ /home/u/.config/btop/btop.conf                                                                   │
-│ enter view · space select · / filter · r re-add · a apply · S session · ? help · q quit          │
+│ /home/u/.config/btop/btop.conf  template                                                         │
+│ enter view · / filter · r re-add · a apply · u undo · ? help · q quit                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

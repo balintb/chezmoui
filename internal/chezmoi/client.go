@@ -80,6 +80,7 @@ type Entry struct {
 	Absolute       string
 	SourceAbsolute string
 	SourceRelative string
+	Attributes     []Attribute
 }
 
 func (c *Client) Managed(ctx context.Context) ([]Entry, error) {
@@ -108,6 +109,7 @@ func (c *Client) Managed(ctx context.Context) ([]Entry, error) {
 			Absolute:       v.Absolute,
 			SourceAbsolute: v.SourceAbsolute,
 			SourceRelative: v.SourceRelative,
+			Attributes:     ParseAttributes(v.SourceRelative),
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Target < entries[j].Target })

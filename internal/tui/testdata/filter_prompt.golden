@@ -3,7 +3,7 @@
 │ ● 1 modified  + 1 add  − 0 delete  · 1 clean  filter: btop                                       │
 │                                                                                                  │
 │ Modified                                                                                         │
-│     ●  .config/btop/btop.conf                                                                    │
+│     ●  .config/btop/btop.conf t                                                                  │
 │                                                                                                  │
 │ filter: btop                                                                                     │
 │                                                                                                  │

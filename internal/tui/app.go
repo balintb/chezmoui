@@ -75,12 +75,14 @@ func (c rowCategory) title() string {
 }
 
 type row struct {
-	target   string
-	absolute string
-	source   string
-	status   chezmoi.StatusCode
-	srcDrift chezmoi.StatusCode
-	isDir    bool
+	target    string
+	absolute  string
+	source    string
+	sourceAbs string
+	status    chezmoi.StatusCode
+	srcDrift  chezmoi.StatusCode
+	isDir     bool
+	attrs     []chezmoi.Attribute
 }
 
 func (r row) modified() bool {
@@ -164,6 +166,7 @@ type Backend interface {
 type Model struct {
 	cli         Backend
 	readFile    func(string) ([]byte, error)
+	writeFile   func(string, []byte, os.FileMode) error
 	configStore *config.Store
 	now         func() time.Time
 	cacheDir    string
@@ -198,9 +201,12 @@ type Model struct {
 	filter      string
 	filterInput textinput.Model
 
+	undo []undoEntry
+
 	pendingPaths []string
 	confirmMsg   string
 	pendingOp    pendingOp
+	pendingUndo  undoEntry
 
 	session sessionData
 
@@ -215,6 +221,7 @@ func NewModel(cli Backend) Model {
 	return Model{
 		cli:         cli,
 		readFile:    os.ReadFile,
+		writeFile:   writeFileAtomic,
 		now:         time.Now,
 		configStore: config.DefaultStore(),
 		state:       viewLoading,
@@ -230,6 +237,7 @@ type pendingOp int
 const (
 	opReAdd pendingOp = iota
 	opApply
+	opUndo
 )
 
 func newFilterInput() textinput.Model {
@@ -242,6 +250,12 @@ func newFilterInput() textinput.Model {
 
 func (m Model) WithConfigStore(s *config.Store) Model {
 	m.configStore = s
+	return m
+}
+
+// WithWriteFile overrides the file writer used to restore undo snapshots.
+func (m Model) WithWriteFile(f func(string, []byte, os.FileMode) error) Model {
+	m.writeFile = f
 	return m
 }
 
@@ -275,8 +289,14 @@ type sideLoadedMsg struct {
 	liveMissing bool
 	unified     string
 }
-type reAddDoneMsg struct{ count int }
-type applyDoneMsg struct{ count int }
+type reAddDoneMsg struct {
+	count int
+	undo  []undoEntry
+}
+type applyDoneMsg struct {
+	count int
+	undo  []undoEntry
+}
 type errMsg struct {
 	err   error
 	retry tea.Cmd
@@ -303,12 +323,14 @@ func loadEntriesCmd(cli Lister) tea.Cmd {
 		rows := make([]row, 0, len(entries))
 		for _, e := range entries {
 			r := row{
-				target:   e.Target,
-				absolute: e.Absolute,
-				source:   e.SourceRelative,
-				status:   chezmoi.StatusClean,
-				srcDrift: chezmoi.StatusClean,
-				isDir:    isSourceDir(e.SourceAbsolute),
+				target:    e.Target,
+				absolute:  e.Absolute,
+				source:    e.SourceRelative,
+				sourceAbs: e.SourceAbsolute,
+				status:    chezmoi.StatusClean,
+				srcDrift:  chezmoi.StatusClean,
+				isDir:     isSourceDir(e.SourceAbsolute),
+				attrs:     e.Attributes,
 			}
 			if s, ok := stByPath[e.Target]; ok {
 				r.status = s.Target
@@ -354,26 +376,34 @@ func loadSideCmd(cli Reader, differ Differ, absPath, displayPath string, reader 
 }
 
 func reAddCmd(cli Mutator, paths []string) tea.Cmd {
+	return reAddCmdUndo(cli, paths, nil)
+}
+
+func reAddCmdUndo(cli Mutator, paths []string, undo []undoEntry) tea.Cmd {
 	return func() tea.Msg {
-		retry := reAddCmd(cli, paths)
+		retry := reAddCmdUndo(cli, paths, undo)
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		if err := cli.ReAdd(ctx, paths...); err != nil {
 			return errMsg{err: opError{Op: "re-add", Target: strings.Join(paths, ", "), Err: err}, retry: retry}
 		}
-		return reAddDoneMsg{count: len(paths)}
+		return reAddDoneMsg{count: len(paths), undo: undo}
 	}
 }
 
 func applyCmd(cli Mutator, paths []string) tea.Cmd {
+	return applyCmdUndo(cli, paths, nil)
+}
+
+func applyCmdUndo(cli Mutator, paths []string, undo []undoEntry) tea.Cmd {
 	return func() tea.Msg {
-		retry := applyCmd(cli, paths)
+		retry := applyCmdUndo(cli, paths, undo)
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		if err := cli.Apply(ctx, paths...); err != nil {
 			return errMsg{err: opError{Op: "apply", Target: strings.Join(paths, ", "), Err: err}, retry: retry}
 		}
-		return applyDoneMsg{count: len(paths)}
+		return applyDoneMsg{count: len(paths), undo: undo}
 	}
 }
 
@@ -425,7 +455,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case reAddDoneMsg:
-		m.status = fmt.Sprintf("re-added %d file(s)", msg.count)
+		m.pushUndo(msg.undo)
+		m.status = fmt.Sprintf("re-added %d file(s) · u to undo", msg.count)
 		m.selected = map[string]bool{}
 		m.pendingPaths = nil
 		m.confirmMsg = ""
@@ -435,12 +466,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, loadEntriesCmd(m.cli)
 
 	case applyDoneMsg:
-		m.status = fmt.Sprintf("applied %d file(s)", msg.count)
+		m.pushUndo(msg.undo)
+		m.status = fmt.Sprintf("applied %d file(s) · u to undo", msg.count)
 		m.selected = map[string]bool{}
 		m.pendingPaths = nil
 		m.confirmMsg = ""
 		m.err = nil
 		m.retry = nil
+		m.loading = true
+		return m, loadEntriesCmd(m.cli)
+
+	case undoDoneMsg:
+		if msg.hasPush {
+			m.undo = append(m.undo, msg.pushed)
+		}
+		m.pendingPaths = nil
+		m.pendingOp = opUndo
+		m.confirmMsg = ""
+		m.err = nil
+		m.retry = nil
+		m.status = "restored " + msg.restored + " · u to redo"
 		m.loading = true
 		return m, loadEntriesCmd(m.cli)
 
@@ -537,16 +582,25 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.Confirm):
 			paths := m.pendingPaths
 			op := m.pendingOp
+			if op == opUndo {
+				entry := m.pendingUndo
+				m.confirmMsg = ""
+				m.pendingPaths = nil
+				m.loading = true
+				return m, m.undoRestore(entry)
+			}
+			undo := m.buildUndo(op, paths)
 			m.confirmMsg = ""
 			m.pendingPaths = nil
 			m.loading = true
 			if op == opApply {
-				return m, applyCmd(m.cli, paths)
+				return m, applyCmdUndo(m.cli, paths, undo)
 			}
-			return m, reAddCmd(m.cli, paths)
+			return m, reAddCmdUndo(m.cli, paths, undo)
 		case key.Matches(msg, keys.Cancel):
 			m.confirmMsg = ""
 			m.pendingPaths = nil
+			m.pendingOp = opReAdd
 			m.status = "cancelled"
 		}
 		return m, nil
@@ -678,6 +732,8 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.confirmMsg = fmt.Sprintf("Apply %d file(s) (overwrite live)?", len(paths))
 	case key.Matches(msg, keys.Search):
 		return m.beginFilter()
+	case key.Matches(msg, keys.Undo):
+		return m.beginUndo()
 	}
 	return m, nil
 }
@@ -697,6 +753,8 @@ func (m Model) updateSide(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pendingOp = opApply
 		m.confirmMsg = fmt.Sprintf("Apply %s (overwrite live)?", m.sideDisplay)
 		return m, nil
+	case key.Matches(msg, keys.Undo):
+		return m.beginUndo()
 	case key.Matches(msg, keys.SideMode):
 		m.sideUnified = !m.sideUnified
 		m.vp.SetContent(m.renderDiffBody())
@@ -1102,6 +1160,9 @@ func (m Model) viewListPane() string {
 		b.WriteString(mutedStyle.Render(m.status))
 	} else if r, ok := m.cursorRow(); ok {
 		b.WriteString(mutedStyle.Render(r.absolute))
+		if d := attrDetail(r.attrs); d != "" {
+			b.WriteString("  " + attrStyle.Render(d))
+		}
 	}
 	b.WriteString("\n")
 	b.WriteString(m.contextHelp())
@@ -1201,8 +1262,13 @@ func formatRow(r row, selected, cursor bool, width int) string {
 	}
 	targetPart := withCursor(targetStyle).Render(target)
 
+	attrsPart := ""
+	if len(r.attrs) > 0 {
+		attrsPart = " " + withCursor(attrStyle).Render(attrChips(r.attrs))
+	}
+
 	line := plainBg.Render("  ") + markPart + plainBg.Render(" ") +
-		glyphPart + plainBg.Render("  ") + targetPart
+		glyphPart + plainBg.Render("  ") + targetPart + attrsPart
 
 	if cursor && width > 0 {
 		visible := lipgloss.Width(line)
@@ -1217,6 +1283,27 @@ func statusChip(glyph, label string, count int, style lipgloss.Style) string {
 	return fmt.Sprintf("%s %d %s", style.Render(glyph), count, label)
 }
 
+// attrChips renders a compact set of attribute glyphs, e.g. "tx".
+func attrChips(attrs []chezmoi.Attribute) string {
+	var b strings.Builder
+	for _, a := range attrs {
+		b.WriteString(a.Short())
+	}
+	return b.String()
+}
+
+// attrDetail renders a human-readable attribute list for the cursor detail line.
+func attrDetail(attrs []chezmoi.Attribute) string {
+	if len(attrs) == 0 {
+		return ""
+	}
+	names := make([]string, len(attrs))
+	for i, a := range attrs {
+		names[i] = string(a)
+	}
+	return strings.Join(names, ", ")
+}
+
 func (m Model) contextHelp() string {
 	if m.filtering {
 		return mutedStyle.Render("type to filter · enter keep · esc clear")
@@ -1224,14 +1311,14 @@ func (m Model) contextHelp() string {
 	switch m.state {
 	case viewSideBySide:
 		if m.sideUnified {
-			return mutedStyle.Render("↑/↓ scroll · [/] hunk · u side-by-side · r re-add · a apply · esc back")
+			return mutedStyle.Render("↑/↓ scroll · [/] hunk · U side-by-side · r re-add · a apply · esc back")
 		}
-		return mutedStyle.Render("↑/↓ scroll · [/] hunk · u unified · r re-add · a apply · esc back")
+		return mutedStyle.Render("↑/↓ scroll · [/] hunk · U unified · r re-add · a apply · esc back")
 	default:
 		if m.filter != "" {
 			return mutedStyle.Render("enter view · / edit filter · esc clear filter · r re-add · a apply · ? help · q quit")
 		}
-		return mutedStyle.Render("enter view · space select · / filter · r re-add · a apply · S session · ? help · q quit")
+		return mutedStyle.Render("enter view · / filter · r re-add · a apply · u undo · ? help · q quit")
 	}
 }
 

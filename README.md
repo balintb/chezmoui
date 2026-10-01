@@ -8,6 +8,8 @@ A simple TUI for [chezmoi](https://www.chezmoi.io/).
 - notices logical vs. semantic differences
 - filter the managed list by path with `/`
 - re-add (live → source) or apply (source → live), single or bulk
+- undo the last action from a local snapshot
+- source-state attribute chips (template, private, executable, encrypted, scripts, …)
 - sync session: walk through every drifted file, decide keep/revert/skip per file
 - finds your dotfiles repo
 
@@ -47,6 +49,7 @@ go test ./internal/tui/ -run '^$' -fuzz=FuzzAlignLines
 go test ./internal/tui/ -run '^$' -fuzz=FuzzSanitizeForFilename
 go test ./internal/tui/ -run '^$' -fuzz=FuzzParseUnified
 go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseStatus
+go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseAttributes
 ```
 
 ### Golden files

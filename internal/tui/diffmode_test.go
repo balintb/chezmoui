@@ -42,7 +42,7 @@ func TestSideView_ToggleUnified(t *testing.T) {
 	if m.sideUnified {
 		t.Fatal("should default to side-by-side")
 	}
-	m, _ = press(t, m, 'u')
+	m, _ = press(t, m, 'U')
 	if !m.sideUnified {
 		t.Fatal("u should switch to unified")
 	}
@@ -53,7 +53,7 @@ func TestSideView_ToggleUnified(t *testing.T) {
 	if strings.Contains(view, "target (chezmoi)") {
 		t.Errorf("unified view should not render the side-by-side panels:\n%s", view)
 	}
-	m, _ = press(t, m, 'u')
+	m, _ = press(t, m, 'U')
 	if m.sideUnified {
 		t.Fatal("u should toggle back to side-by-side")
 	}
@@ -61,7 +61,7 @@ func TestSideView_ToggleUnified(t *testing.T) {
 
 func TestSideView_HunkNavigation(t *testing.T) {
 	m, _ := sideFixture(t)
-	m, _ = press(t, m, 'u') // unified view
+	m, _ = press(t, m, 'U') // unified view
 
 	// The fixture diff is short; pad it so the viewport can actually scroll.
 	m.unifiedDiff = padDiff(sampleUnified, 40)
@@ -97,7 +97,7 @@ func padDiff(diff string, extra int) string {
 
 func TestSideView_HunkNavigationWraps(t *testing.T) {
 	m, _ := sideFixture(t)
-	m, _ = press(t, m, 'u')
+	m, _ = press(t, m, 'U')
 	m.unifiedDiff = padDiff(sampleUnified, 40)
 	m.hunks = hunkOffsets(parseUnified(m.unifiedDiff))
 	m.vp.SetContent(m.renderDiffBody())
@@ -157,7 +157,7 @@ func TestSideView_ReAddPrompts(t *testing.T) {
 
 func TestSideView_UnifiedHeaderShowsHunkCount(t *testing.T) {
 	m, _ := sideFixture(t)
-	m, _ = press(t, m, 'u')
+	m, _ = press(t, m, 'U')
 	view := stripANSI(m.View())
 	if !strings.Contains(view, "unified diff · 2 hunk") {
 		t.Errorf("unified header should report hunk count:\n%s", view)

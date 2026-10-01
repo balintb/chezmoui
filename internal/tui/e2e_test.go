@@ -583,12 +583,58 @@ func TestE2E_UnifiedDiff_Toggle(t *testing.T) {
 	}
 	m, _ = step(t, m, msg)
 
-	m, _ = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	m, _ = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'U'}})
 	if !m.sideUnified {
 		t.Fatal("u should enable unified mode")
 	}
 	view := stripANSI(m.vp.View())
 	if !strings.Contains(view, "@@") {
 		t.Errorf("unified view should contain hunk headers:\n%s", view)
+	}
+}
+
+func TestE2E_Undo_ReAddThenRestoreSource(t *testing.T) {
+	m, _, home := e2eFixture(t)
+
+	srcPath := filepath.Join(home, ".local", "share", "chezmoi", "dot_testfile")
+	before, err := os.ReadFile(srcPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, msg := range drainBatch(m.Init()) {
+		m, _ = step(t, m, msg)
+	}
+	m, _ = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	m, _ = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if m.confirmMsg == "" {
+		t.Fatal("expected re-add confirm prompt")
+	}
+	m, cmd := step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	msg := drainCmd(t, cmd)
+	if e, ok := msg.(errMsg); ok {
+		t.Fatalf("re-add failed: %v", e.err)
+	}
+	m, _ = step(t, m, msg)
+
+	promoted, _ := os.ReadFile(srcPath)
+	if string(promoted) == string(before) {
+		t.Fatal("re-add should have changed the source file")
+	}
+
+	m, _ = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	if m.confirmMsg == "" {
+		t.Fatal("u should prompt to undo the re-add")
+	}
+	m, cmd = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	msg = drainCmd(t, cmd)
+	m, _ = step(t, m, msg)
+
+	restored, err := os.ReadFile(srcPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(restored) != string(before) {
+		t.Errorf("source after undo = %q, want %q", restored, before)
 	}
 }

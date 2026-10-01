@@ -13,6 +13,7 @@ type keyMap struct {
 	View     key.Binding
 	ReAdd    key.Binding
 	Apply    key.Binding
+	Undo     key.Binding
 	OnlyMod  key.Binding
 	Refresh  key.Binding
 	Search   key.Binding
@@ -47,10 +48,11 @@ var keys = keyMap{
 	View:     key.NewBinding(key.WithKeys("enter", "d", "s"), key.WithHelp("enter", "view diff")),
 	ReAdd:    key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "re-add (live → source)")),
 	Apply:    key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "apply (source → live)")),
+	Undo:     key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "undo last action")),
 	OnlyMod:  key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "modified-only")),
 	Refresh:  key.NewBinding(key.WithKeys("R", "ctrl+r"), key.WithHelp("R", "refresh")),
 	Search:   key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-	SideMode: key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "toggle unified/side-by-side")),
+	SideMode: key.NewBinding(key.WithKeys("U"), key.WithHelp("U", "toggle unified/side-by-side")),
 	NextHunk: key.NewBinding(key.WithKeys("]"), key.WithHelp("]", "next hunk")),
 	PrevHunk: key.NewBinding(key.WithKeys("["), key.WithHelp("[", "prev hunk")),
 	Confirm:  key.NewBinding(key.WithKeys("y", "enter"), key.WithHelp("y", "confirm")),
@@ -97,7 +99,7 @@ func helpGroups() []helpGroup {
 			{"  click row", "move cursor"},
 		}},
 		{"Actions", [][2]string{
-			b(keys.View), b(keys.ReAdd), b(keys.Apply), b(keys.Refresh), b(keys.SessionStart),
+			b(keys.View), b(keys.ReAdd), b(keys.Apply), b(keys.Undo), b(keys.Refresh), b(keys.SessionStart),
 		}},
 		{"Diff", [][2]string{
 			b(keys.SideMode), b(keys.NextHunk), b(keys.PrevHunk),

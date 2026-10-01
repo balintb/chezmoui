@@ -80,4 +80,8 @@ var (
 	filterChipStyle = lipgloss.NewStyle().
 			Foreground(colorAccent).
 			Bold(true)
+
+	attrStyle = lipgloss.NewStyle().
+			Foreground(colorWarn).
+			Bold(true)
 )
