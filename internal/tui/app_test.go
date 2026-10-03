@@ -24,12 +24,19 @@ type stubBackend struct {
 	sourcePath string
 	gitStatus  chezmoi.GitStatus
 
-	catCalls   []string
-	diffCalls  []string
-	reAddCalls [][]string
-	applyCalls [][]string
-	reAddErr   error
-	applyErr   error
+	unmanaged []string
+	ignored   []string
+	doctor    []chezmoi.DoctorCheck
+
+	catCalls     []string
+	diffCalls    []string
+	reAddCalls   [][]string
+	applyCalls   [][]string
+	addCalls     [][]string
+	reAddErr     error
+	applyErr     error
+	addErr       error
+	unmanagedErr error
 }
 
 func (s *stubBackend) Managed(context.Context) ([]chezmoi.Entry, error) {
@@ -58,6 +65,21 @@ func (s *stubBackend) Apply(_ context.Context, paths ...string) error {
 	s.applyCalls = append(s.applyCalls, cp)
 	return s.applyErr
 }
+func (s *stubBackend) Add(_ context.Context, paths ...string) error {
+	cp := make([]string, len(paths))
+	copy(cp, paths)
+	s.addCalls = append(s.addCalls, cp)
+	return s.addErr
+}
+func (s *stubBackend) Unmanaged(context.Context) ([]string, error) {
+	return s.unmanaged, s.unmanagedErr
+}
+func (s *stubBackend) Ignored(context.Context) ([]string, error) {
+	return s.ignored, nil
+}
+func (s *stubBackend) Doctor(context.Context) ([]chezmoi.DoctorCheck, error) {
+	return s.doctor, nil
+}
 func (s *stubBackend) SourcePath(context.Context) (string, error) {
 	return s.sourcePath, nil
 }
@@ -76,6 +98,8 @@ func sampleBackend() *stubBackend {
 			{Source: ' ', Target: 'M', Path: ".config/btop/btop.conf"},
 			{Source: ' ', Target: 'A', Path: ".bashrc"},
 		},
+		unmanaged: []string{".zshrc", ".config/newapp/config"},
+		ignored:   []string{".cache/appstate"},
 	}
 }
 
@@ -631,17 +655,13 @@ func TestModel_TabKey_CyclesForward(t *testing.T) {
 	if m.activeTab != tabAll {
 		t.Fatalf("setup: should start on All, got %v", m.activeTab)
 	}
-	m, _ = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyTab})
-	if m.activeTab != tabModified {
-		t.Errorf("tab from All: want Modified, got %v", m.activeTab)
-	}
-	m, _ = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyTab})
-	if m.activeTab != tabHelp {
-		t.Errorf("tab from Modified: want Help, got %v", m.activeTab)
-	}
-	m, _ = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyTab})
-	if m.activeTab != tabAll {
-		t.Errorf("tab from Help should wrap to All, got %v", m.activeTab)
+	// Tab advances through the full order and wraps back to All.
+	for i := 1; i <= len(tabs); i++ {
+		want := tabs[i%len(tabs)]
+		m, _ = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyTab})
+		if m.activeTab != want {
+			t.Fatalf("tab step %d: want %v, got %v", i, want, m.activeTab)
+		}
 	}
 }
 
@@ -1115,13 +1135,35 @@ func TestModel_RepoChip_ShownWhenConfigured(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := NewModel(b).WithConfigStore(store)
-	m, _ = applyMsg(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
+	m, _ = applyMsg(t, m, tea.WindowSizeMsg{Width: 140, Height: 40})
 	for _, msg := range drainBatch(m.Init()) {
 		m, _ = applyMsg(t, m, msg)
 	}
 	view := stripANSI(m.View())
 	if !strings.Contains(view, "/tmp/dotfiles") {
 		t.Errorf("repo chip should be visible in chrome:\n%s", view)
+	}
+}
+
+func TestModel_RepoChip_TruncatesWhenCrowded(t *testing.T) {
+	b := sampleBackend()
+	store := &config.Store{Path: filepath.Join(t.TempDir(), "config.json")}
+	if err := store.Save(config.Config{RepoPath: "/tmp/dotfiles", RepoConfirmed: true}); err != nil {
+		t.Fatal(err)
+	}
+	m := NewModel(b).WithConfigStore(store)
+	m, _ = applyMsg(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
+	for _, msg := range drainBatch(m.Init()) {
+		m, _ = applyMsg(t, m, msg)
+	}
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "repo ·") {
+		t.Errorf("repo chip should still be indicated when truncated:\n%s", view)
+	}
+	for _, line := range strings.Split(view, "\n") {
+		if lipgloss.Width(line) > 100 {
+			t.Errorf("chrome line overflows width: %q", line)
+		}
 	}
 }
 

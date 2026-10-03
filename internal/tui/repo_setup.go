@@ -116,11 +116,15 @@ func (m Model) repoChip() string {
 	if m.repoPath == "" {
 		return ""
 	}
-	short := m.repoPath
-	if home, err := os.UserHomeDir(); err == nil && home != "" && strings.HasPrefix(short, home) {
-		short = "~" + strings.TrimPrefix(short, home)
+	return mutedStyle.Render("repo · ") + shortenHome(m.repoPath)
+}
+
+// shortenHome replaces a leading home directory with "~" for display.
+func shortenHome(path string) string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" && strings.HasPrefix(path, home) {
+		return "~" + strings.TrimPrefix(path, home)
 	}
-	return mutedStyle.Render("repo · ") + short
+	return path
 }
 
 func (m *Model) enterRepoSetup() tea.Cmd {

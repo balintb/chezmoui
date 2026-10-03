@@ -1,10 +1,10 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│   All   │   Modified (1)   │   Unmanaged   │   Ignored   │   Doctor   │   Help                   │
-│ ● 1 modified  + 1 add  − 0 delete  · 1 clean  filter: btop                                       │
+│   All   │   Modified (1)   │   Unmanaged (2)   │   Ignored   │   Doctor   │   Help               │
+│ Unmanaged  2                                                                                     │
 │                                                                                                  │
-│ Modified                                                                                         │
-│     ●  .config/btop/btop.conf t                                                                  │
+│     .zshrc                                                                                       │
+│     .config/newapp/config                                                                        │
 │                                                                                                  │
-│ filter: btop                                                                                     │
-│                                                                                                  │
+│ unmanaged files — press space to select, A to add to source                                      │
+│ space select · A add to source · R refresh · tab switch · q quit                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

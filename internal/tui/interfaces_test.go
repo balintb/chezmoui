@@ -9,12 +9,14 @@ import (
 
 // The full stub satisfies every narrow interface and the composite Backend.
 var (
-	_ Lister   = (*stubBackend)(nil)
-	_ Reader   = (*stubBackend)(nil)
-	_ Differ   = (*stubBackend)(nil)
-	_ Mutator  = (*stubBackend)(nil)
-	_ RepoInfo = (*stubBackend)(nil)
-	_ Backend  = (*stubBackend)(nil)
+	_ Lister    = (*stubBackend)(nil)
+	_ Reader    = (*stubBackend)(nil)
+	_ Differ    = (*stubBackend)(nil)
+	_ Mutator   = (*stubBackend)(nil)
+	_ RepoInfo  = (*stubBackend)(nil)
+	_ Enumer    = (*stubBackend)(nil)
+	_ Diagnoser = (*stubBackend)(nil)
+	_ Backend   = (*stubBackend)(nil)
 )
 
 // listerOnly implements Lister and nothing else, proving that read paths do not depend on mutation or repo operations.
@@ -62,6 +64,7 @@ func (m *mutatorOnly) ReAdd(_ context.Context, paths ...string) error {
 	return nil
 }
 func (m *mutatorOnly) Apply(context.Context, ...string) error { return nil }
+func (m *mutatorOnly) Add(context.Context, ...string) error   { return nil }
 
 func TestReAddCmd_AcceptsMutatorOnly(t *testing.T) {
 	m := &mutatorOnly{}

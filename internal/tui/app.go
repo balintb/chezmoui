@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	zone "github.com/lrstanley/bubblezone"
 )
 
@@ -32,8 +33,17 @@ type tabID int
 const (
 	tabAll tabID = iota
 	tabModified
+	tabUnmanaged
+	tabIgnored
+	tabDoctor
 	tabHelp
 )
+
+// tabs lists the tab order shown in the tab bar.
+var tabs = []tabID{tabAll, tabModified, tabUnmanaged, tabIgnored, tabDoctor, tabHelp}
+
+// tabCount is the number of tabs; kept for callers that iterate the enum.
+const tabCount = int(tabHelp) + 1
 
 func (t tabID) name() string {
 	switch t {
@@ -41,13 +51,17 @@ func (t tabID) name() string {
 		return "All"
 	case tabModified:
 		return "Modified"
+	case tabUnmanaged:
+		return "Unmanaged"
+	case tabIgnored:
+		return "Ignored"
+	case tabDoctor:
+		return "Doctor"
 	case tabHelp:
 		return "Help"
 	}
 	return ""
 }
-
-const tabCount = 3
 
 type rowCategory int
 
@@ -146,6 +160,18 @@ type Differ interface {
 type Mutator interface {
 	ReAdd(ctx context.Context, paths ...string) error
 	Apply(ctx context.Context, paths ...string) error
+	Add(ctx context.Context, paths ...string) error
+}
+
+// Enumer lists destination paths chezmoi does not manage or has ignored.
+type Enumer interface {
+	Unmanaged(ctx context.Context) ([]string, error)
+	Ignored(ctx context.Context) ([]string, error)
+}
+
+// Diagnoser runs chezmoi self-diagnostics.
+type Diagnoser interface {
+	Doctor(ctx context.Context) ([]chezmoi.DoctorCheck, error)
 }
 
 // RepoInfo reports source-repository locations and git state.
@@ -161,6 +187,8 @@ type Backend interface {
 	Differ
 	Mutator
 	RepoInfo
+	Enumer
+	Diagnoser
 }
 
 type Model struct {
@@ -203,6 +231,15 @@ type Model struct {
 
 	undo []undoEntry
 
+	unmanaged       []string
+	unmanagedSel    map[string]bool
+	unmanagedCursor int
+	ignored         []string
+	ignoredCursor   int
+	doctor          []chezmoi.DoctorCheck
+	doctorCursor    int
+	inspectLoaded   map[tabID]bool
+
 	pendingPaths []string
 	confirmMsg   string
 	pendingOp    pendingOp
@@ -219,15 +256,17 @@ type Model struct {
 
 func NewModel(cli Backend) Model {
 	return Model{
-		cli:         cli,
-		readFile:    os.ReadFile,
-		writeFile:   writeFileAtomic,
-		now:         time.Now,
-		configStore: config.DefaultStore(),
-		state:       viewLoading,
-		selected:    map[string]bool{},
-		filterInput: newFilterInput(),
-		loading:     true,
+		cli:           cli,
+		readFile:      os.ReadFile,
+		writeFile:     writeFileAtomic,
+		now:           time.Now,
+		configStore:   config.DefaultStore(),
+		state:         viewLoading,
+		selected:      map[string]bool{},
+		unmanagedSel:  map[string]bool{},
+		inspectLoaded: map[tabID]bool{},
+		filterInput:   newFilterInput(),
+		loading:       true,
 	}
 }
 
@@ -238,6 +277,7 @@ const (
 	opReAdd pendingOp = iota
 	opApply
 	opUndo
+	opAdd
 )
 
 func newFilterInput() textinput.Model {
@@ -489,6 +529,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		return m, loadEntriesCmd(m.cli)
 
+	case unmanagedLoadedMsg:
+		m.unmanaged = msg.paths
+		m.unmanagedCursor = 0
+		m.unmanagedSel = map[string]bool{}
+		m.err = nil
+		m.retry = nil
+		return m, nil
+
+	case ignoredLoadedMsg:
+		m.ignored = msg.paths
+		m.ignoredCursor = 0
+		m.err = nil
+		m.retry = nil
+		return m, nil
+
+	case doctorLoadedMsg:
+		m.doctor = msg.checks
+		m.doctorCursor = 0
+		m.err = nil
+		m.retry = nil
+		return m, nil
+
+	case addDoneMsg:
+		m.status = fmt.Sprintf("added %d file(s) to source", msg.count)
+		m.unmanagedSel = map[string]bool{}
+		m.pendingPaths = nil
+		m.pendingOp = opReAdd
+		m.confirmMsg = ""
+		m.err = nil
+		m.retry = nil
+		m.inspectLoaded[tabUnmanaged] = false
+		m.loading = true
+		return m, tea.Batch(loadEntriesCmd(m.cli), loadUnmanagedCmd(m.cli))
+
 	case errMsg:
 		m.err = msg.err
 		m.retry = msg.retry
@@ -589,6 +663,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				return m, m.undoRestore(entry)
 			}
+			if op == opAdd {
+				m.confirmMsg = ""
+				m.pendingPaths = nil
+				m.loading = true
+				return m, addCmd(m.cli, paths)
+			}
 			undo := m.buildUndo(op, paths)
 			m.confirmMsg = ""
 			m.pendingPaths = nil
@@ -615,26 +695,20 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case key.Matches(msg, keys.NextTab):
-		m.switchTab((m.activeTab + 1) % tabCount)
-		return m, nil
+		return m, m.switchTab(tabID((int(m.activeTab) + 1) % tabCount))
 	case key.Matches(msg, keys.PrevTab):
-		m.switchTab((m.activeTab + tabCount - 1) % tabCount)
-		return m, nil
+		return m, m.switchTab(tabID((int(m.activeTab) + tabCount - 1) % tabCount))
 	case key.Matches(msg, keys.OnlyMod):
 		if m.activeTab == tabModified {
-			m.switchTab(tabAll)
-		} else {
-			m.switchTab(tabModified)
+			return m, m.switchTab(tabAll)
 		}
-		return m, nil
+		return m, m.switchTab(tabModified)
 	case key.Matches(msg, keys.Help):
 		if m.activeTab == tabHelp {
-			m.switchTab(m.previousTab)
-		} else {
-			m.previousTab = m.activeTab
-			m.switchTab(tabHelp)
+			return m, m.switchTab(m.previousTab)
 		}
-		return m, nil
+		m.previousTab = m.activeTab
+		return m, m.switchTab(tabHelp)
 	}
 
 	if m.activeTab == tabHelp {
@@ -647,6 +721,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if isInspectTab(m.activeTab) {
+		return m.updateInspect(msg)
+	}
+
 	switch m.state {
 	case viewSideBySide:
 		return m.updateSide(msg)
@@ -654,6 +732,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateList(msg)
 	}
 	return m, nil
+}
+
+func isInspectTab(t tabID) bool {
+	return t == tabUnmanaged || t == tabIgnored || t == tabDoctor
 }
 
 func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -798,16 +880,15 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case tea.MouseButtonWheelDown:
 		return m.scrollWheel(+1)
 	case tea.MouseButtonLeft:
-		for t := tabID(0); t < tabCount; t++ {
+		for _, t := range tabs {
 			if zone.Get(tabZoneID(t)).InBounds(msg) {
 				if t == tabHelp && m.activeTab != tabHelp {
 					m.previousTab = m.activeTab
 				}
-				m.switchTab(t)
-				return m, nil
+				return m, m.switchTab(t)
 			}
 		}
-		if m.activeTab != tabHelp && m.state == viewList {
+		if m.activeTab != tabHelp && m.state == viewList && !isInspectTab(m.activeTab) {
 			for vi, idx := range m.visibleIdxs {
 				if zone.Get(rowZoneID(idx)).InBounds(msg) {
 					m.cursor = vi
@@ -822,6 +903,9 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 func (m Model) scrollWheel(delta int) (tea.Model, tea.Cmd) {
 	if m.activeTab == tabHelp {
 		return m, nil
+	}
+	if isInspectTab(m.activeTab) {
+		return m.scrollInspect(delta)
 	}
 	if m.state == viewSideBySide {
 		for i := 0; i < 3; i++ {
@@ -967,12 +1051,14 @@ func (m Model) handleSessionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) switchTab(t tabID) {
+// switchTab changes the active tab and returns a command to fetch the tab's data on first visit.
+func (m *Model) switchTab(t tabID) tea.Cmd {
 	m.activeTab = t
 	m.recomputeVisible()
 	if m.cursor >= len(m.visibleIdxs) {
 		m.cursor = max(0, len(m.visibleIdxs)-1)
 	}
+	return m.ensureTabLoaded(t)
 }
 
 func (m *Model) recomputeVisible() {
@@ -1035,15 +1121,20 @@ func (m Model) bodyDims() (int, int) {
 func tabZoneID(t tabID) string { return fmt.Sprintf("tab-%d", t) }
 func rowZoneID(idx int) string { return fmt.Sprintf("row-%d", idx) }
 
-func (m Model) alignTabsAndChip(tabs, chip string) string {
+func (m Model) alignTabsAndChip(tabRow, chip string) string {
 	bw, _ := m.bodyDims()
-	lw := lipgloss.Width(tabs)
-	rw := lipgloss.Width(chip)
-	gap := bw - lw - rw
-	if gap < 1 {
-		return tabs
+	lw := lipgloss.Width(tabRow)
+	space := bw - lw - 1
+	if space <= 0 {
+		return tabRow
 	}
-	return tabs + strings.Repeat(" ", gap) + chip
+	// Truncate the chip to whatever room is left so it stays visible even when many tabs are shown.
+	if lipgloss.Width(chip) > space {
+		chip = ansi.Truncate(chip, space, "…")
+		return tabRow + " " + chip
+	}
+	gap := bw - lw - lipgloss.Width(chip)
+	return tabRow + strings.Repeat(" ", gap) + chip
 }
 
 func (m Model) View() string {
@@ -1076,11 +1167,19 @@ func (m Model) View() string {
 
 func (m Model) viewTabBar() string {
 	var parts []string
-	for t := tabID(0); t < tabCount; t++ {
+	for _, t := range tabs {
 		label := t.name()
-		if t == tabModified {
-			counts := m.categoryCounts()
-			if n := counts[catModified]; n > 0 {
+		switch t {
+		case tabModified:
+			if n := m.categoryCounts()[catModified]; n > 0 {
+				label = fmt.Sprintf("%s (%d)", label, n)
+			}
+		case tabUnmanaged:
+			if n := len(m.unmanaged); n > 0 {
+				label = fmt.Sprintf("%s (%d)", label, n)
+			}
+		case tabIgnored:
+			if n := len(m.ignored); n > 0 {
 				label = fmt.Sprintf("%s (%d)", label, n)
 			}
 		}
@@ -1099,8 +1198,6 @@ func (m Model) viewBody() string {
 	switch {
 	case m.state == viewRepoSetup:
 		return m.viewRepoSetup()
-	case m.loading:
-		return mutedStyle.Render("loading…")
 	case m.err != nil:
 		return m.viewError()
 	case m.session.state == sessionWelcome:
@@ -1111,6 +1208,10 @@ func (m Model) viewBody() string {
 		return m.viewSessionSummary()
 	case m.activeTab == tabHelp:
 		return m.viewHelpPage()
+	case isInspectTab(m.activeTab):
+		return m.viewInspect()
+	case m.loading:
+		return mutedStyle.Render("loading…")
 	case m.state == viewSideBySide:
 		return m.viewSidePane()
 	default:
@@ -1307,6 +1408,14 @@ func attrDetail(attrs []chezmoi.Attribute) string {
 func (m Model) contextHelp() string {
 	if m.filtering {
 		return mutedStyle.Render("type to filter · enter keep · esc clear")
+	}
+	switch m.activeTab {
+	case tabUnmanaged:
+		return mutedStyle.Render("space select · A add to source · R refresh · tab switch · q quit")
+	case tabIgnored:
+		return mutedStyle.Render("↑/↓ scroll · R refresh · tab switch · q quit")
+	case tabDoctor:
+		return mutedStyle.Render("↑/↓ scroll · R re-run · tab switch · q quit")
 	}
 	switch m.state {
 	case viewSideBySide:

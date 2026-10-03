@@ -1,10 +1,9 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│   All   │   Modified (1)   │   Unmanaged   │   Ignored   │   Doctor   │   Help                   │
-│ ● 1 modified  + 1 add  − 0 delete  · 1 clean  filter: btop                                       │
+│   All   │   Modified (1)   │   Unmanaged   │   Ignored (1)   │   Doctor   │   Help               │
+│ Ignored  1                                                                                       │
 │                                                                                                  │
-│ Modified                                                                                         │
-│     ●  .config/btop/btop.conf t                                                                  │
+│     .cache/appstate                                                                              │
 │                                                                                                  │
-│ filter: btop                                                                                     │
-│                                                                                                  │
+│ ignored by chezmoi (see .chezmoiignore)                                                          │
+│ ↑/↓ scroll · R refresh · tab switch · q quit                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

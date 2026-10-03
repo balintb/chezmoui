@@ -10,6 +10,8 @@ A simple TUI for [chezmoi](https://www.chezmoi.io/).
 - re-add (live → source) or apply (source → live), single or bulk
 - undo the last action from a local snapshot
 - source-state attribute chips (template, private, executable, encrypted, scripts, …)
+- Unmanaged and Ignored tabs, with add-to-source
+- Doctor tab for one-key `chezmoi doctor` diagnostics
 - sync session: walk through every drifted file, decide keep/revert/skip per file
 - finds your dotfiles repo
 
@@ -50,6 +52,8 @@ go test ./internal/tui/ -run '^$' -fuzz=FuzzSanitizeForFilename
 go test ./internal/tui/ -run '^$' -fuzz=FuzzParseUnified
 go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseStatus
 go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseAttributes
+go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseDoctor
+go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParsePathList
 ```
 
 ### Golden files
