@@ -15,6 +15,8 @@ type alignedRow struct {
 	LeftPresent, RightPresent bool
 	LeftNum, RightNum         int
 	LooseMatch                bool
+	// Modified marks a replacement pair: differing lines aligned so the renderer can emphasize the tokens that changed.
+	Modified bool
 }
 
 var boolLiteralRe = regexp.MustCompile(`(?i)\b(true|false)\b`)
@@ -78,18 +80,59 @@ func alignLines(left, right string) []alignedRow {
 	for a, b := 0, len(rev)-1; a < b; a, b = a+1, b-1 {
 		rev[a], rev[b] = rev[b], rev[a]
 	}
-	return rev
+	return pairReplacements(rev)
+}
+
+// pairReplacements pairs adjacent runs of deleted lines with a following run of added lines, 1:1, so single-line replacements render as a word-level diff instead of separate add/delete rows. Unpaired leftovers keep their original add/delete form.
+func pairReplacements(rows []alignedRow) []alignedRow {
+	out := make([]alignedRow, 0, len(rows))
+	for i := 0; i < len(rows); {
+		if rows[i].LeftPresent && !rows[i].RightPresent {
+			// Collect the run of deletions.
+			delStart := i
+			for i < len(rows) && rows[i].LeftPresent && !rows[i].RightPresent {
+				i++
+			}
+			dels := rows[delStart:i]
+			// Collect the run of insertions that immediately follows.
+			insStart := i
+			for i < len(rows) && !rows[i].LeftPresent && rows[i].RightPresent {
+				i++
+			}
+			adds := rows[insStart:i]
+
+			paired := min(len(dels), len(adds))
+			for k := 0; k < paired; k++ {
+				out = append(out, alignedRow{
+					Left: dels[k].Left, Right: adds[k].Right,
+					LeftPresent: true, RightPresent: true,
+					LeftNum: dels[k].LeftNum, RightNum: adds[k].RightNum,
+					Modified: true,
+				})
+			}
+			out = append(out, dels[paired:]...)
+			out = append(out, adds[paired:]...)
+			continue
+		}
+		out = append(out, rows[i])
+		i++
+	}
+	return out
 }
 
 func summarizeAlignment(rows []alignedRow) (added, removed, loose int) {
 	for _, r := range rows {
 		switch {
+		case r.Modified:
+			// A paired replacement counts as one add and one remove.
+			added++
+			removed++
+		case r.LooseMatch:
+			loose++
 		case !r.LeftPresent && r.RightPresent:
 			added++
 		case r.LeftPresent && !r.RightPresent:
 			removed++
-		case r.LooseMatch:
-			loose++
 		}
 	}
 	return added, removed, loose
@@ -147,17 +190,52 @@ func formatPanelCell(r alignedRow, side panelSide, contentW int) string {
 	if !present {
 		return gutterStyle.Render(gutter) + phantomLineStyle.Render(strings.Repeat(" ", contentW))
 	}
-	body := truncOrPad(content, contentW)
+
 	switch {
 	case r.LooseMatch:
-		return gutterStyle.Render(gutter) + looseLineStyle.Render(body)
+		return gutterStyle.Render(gutter) + looseLineStyle.Render(truncOrPad(content, contentW))
 	case !otherSidePresent && side == panelSideLeft:
-		return gutterStyle.Render(gutter) + delLineStyle.Render(body)
+		return gutterStyle.Render(gutter) + delLineStyle.Render(truncOrPad(content, contentW))
 	case !otherSidePresent && side == panelSideRight:
-		return gutterStyle.Render(gutter) + addLineStyle.Render(body)
+		return gutterStyle.Render(gutter) + addLineStyle.Render(truncOrPad(content, contentW))
+	case r.Modified:
+		// A replacement pair: color each side and emphasize the changed tokens.
+		return gutterStyle.Render(gutter) + renderChanged(r.Left, r.Right, side, contentW)
 	default:
-		return gutterStyle.Render(gutter) + body
+		return gutterStyle.Render(gutter) + truncOrPad(content, contentW)
 	}
+}
+
+// renderChanged renders one side of a modified line, emphasizing the tokens that differ from the other side.
+func renderChanged(left, right string, side panelSide, contentW int) string {
+	leftSegs, rightSegs := wordDiff(left, right)
+	segs := leftSegs
+	base, emph := delLineStyle, delEmphStyle
+	if side == panelSideRight {
+		segs = rightSegs
+		base, emph = addLineStyle, addEmphStyle
+	}
+	var b strings.Builder
+	visible := 0
+	for _, s := range segs {
+		if visible >= contentW {
+			break
+		}
+		runes := []rune(s.text)
+		if visible+len(runes) > contentW {
+			runes = runes[:contentW-visible]
+		}
+		style := base
+		if s.changed {
+			style = emph
+		}
+		b.WriteString(style.Render(string(runes)))
+		visible += len(runes)
+	}
+	if pad := contentW - visible; pad > 0 {
+		b.WriteString(base.Render(strings.Repeat(" ", pad)))
+	}
+	return b.String()
 }
 
 func truncOrPad(s string, width int) string {

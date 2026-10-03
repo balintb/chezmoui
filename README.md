@@ -5,6 +5,7 @@ A simple TUI for [chezmoi](https://www.chezmoi.io/).
 ## What it does
 
 - side-by-side or unified diff with line numbers and synced scrolling
+- word-level emphasis on the exact tokens that changed within a line
 - notices logical vs. semantic differences
 - filter the managed list by path with `/`
 - re-add (live → source) or apply (source → live), single or bulk
@@ -50,6 +51,7 @@ go test -tags='integration e2e' ./...  # + e2e
 go test ./internal/tui/ -run '^$' -fuzz=FuzzAlignLines
 go test ./internal/tui/ -run '^$' -fuzz=FuzzSanitizeForFilename
 go test ./internal/tui/ -run '^$' -fuzz=FuzzParseUnified
+go test ./internal/tui/ -run '^$' -fuzz=FuzzWordDiff
 go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseStatus
 go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseAttributes
 go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseDoctor

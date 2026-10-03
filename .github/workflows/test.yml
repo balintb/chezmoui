@@ -32,6 +32,7 @@ jobs:
           go test ./internal/tui/ -run '^$' -fuzz=FuzzAlignLines -fuzztime=15s
           go test ./internal/tui/ -run '^$' -fuzz=FuzzSanitizeForFilename -fuzztime=15s
           go test ./internal/tui/ -run '^$' -fuzz=FuzzParseUnified -fuzztime=15s
+          go test ./internal/tui/ -run '^$' -fuzz=FuzzWordDiff -fuzztime=15s
           go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseStatus -fuzztime=15s
           go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseAttributes -fuzztime=15s
           go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseDoctor -fuzztime=15s
