@@ -638,3 +638,98 @@ func TestE2E_Undo_ReAddThenRestoreSource(t *testing.T) {
 		t.Errorf("source after undo = %q, want %q", restored, before)
 	}
 }
+
+// gotoE2ETab switches tabs and drives the resulting load command.
+func gotoE2ETab(t *testing.T, m Model, n int) Model {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		var cmd tea.Cmd
+		next, cmd := step(t, m, tea.KeyMsg{Type: tea.KeyTab})
+		m = next
+		if cmd != nil {
+			m, _ = step(t, m, drainCmd(t, cmd))
+		}
+	}
+	return m
+}
+
+func TestE2E_Unmanaged_AddToSource(t *testing.T) {
+	m, _, home := e2eFixture(t)
+	if err := os.WriteFile(filepath.Join(home, ".fresh"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, msg := range drainBatch(m.Init()) {
+		m, _ = step(t, m, msg)
+	}
+	m = gotoE2ETab(t, m, 2) // Unmanaged
+	if m.activeTab != tabUnmanaged {
+		t.Fatalf("expected Unmanaged tab, got %v", m.activeTab)
+	}
+
+	// Move the cursor onto .fresh, add it, confirm.
+	freshAbs := filepath.Join(home, ".fresh")
+	for i, p := range m.unmanaged {
+		if p == freshAbs {
+			m.unmanagedCursor = i
+		}
+	}
+	m, _ = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	if m.confirmMsg == "" {
+		t.Fatal("expected add confirm prompt")
+	}
+	m, cmd := step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	// The add completion batches an entries refresh and an unmanaged refresh;
+	// drive the whole queue so both land.
+	queue := []tea.Cmd{cmd}
+	for len(queue) > 0 {
+		c := queue[0]
+		queue = queue[1:]
+		if c == nil {
+			continue
+		}
+		out := drainCmd(t, c)
+		if batch, ok := out.(tea.BatchMsg); ok {
+			queue = append(queue, batch...)
+			continue
+		}
+		if e, ok := out.(errMsg); ok {
+			t.Fatalf("add failed: %v", e.err)
+		}
+		var next tea.Cmd
+		m, next = step(t, m, out)
+		if next != nil {
+			queue = append(queue, next)
+		}
+	}
+
+	// .fresh must now be managed.
+	m = gotoE2ETab(t, m, len(tabs)-2) // back around to All
+	managed := false
+	for _, r := range m.rows {
+		if r.target == ".fresh" {
+			managed = true
+		}
+	}
+	if !managed {
+		t.Errorf(".fresh should be managed after adding; rows=%d", len(m.rows))
+	}
+}
+
+func TestE2E_Doctor_ShowsChecks(t *testing.T) {
+	m, _, _ := e2eFixture(t)
+	for _, msg := range drainBatch(m.Init()) {
+		m, _ = step(t, m, msg)
+	}
+	m = gotoE2ETab(t, m, 4) // Doctor
+	if m.activeTab != tabDoctor {
+		t.Fatalf("expected Doctor tab, got %v", m.activeTab)
+	}
+	if len(m.doctor) == 0 {
+		t.Fatal("doctor should populate checks")
+	}
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "version") {
+		t.Errorf("doctor view should list checks:\n%s", view)
+	}
+}

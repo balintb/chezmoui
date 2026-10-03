@@ -1,10 +1,11 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │   All   │   Modified (1)   │   Unmanaged   │   Ignored   │   Doctor   │   Help                   │
-│ ● 1 modified  + 1 add  − 0 delete  · 1 clean  filter: btop                                       │
+│ Doctor  ● 1 ok   ● 1 warn   ● 2 failed                                                           │
 │                                                                                                  │
-│ Modified                                                                                         │
-│     ●  .config/btop/btop.conf t                                                                  │
+│   ok       version                  v2.73.0                                                      │
+│   info     config-file              not found                                                    │
+│   error    source-dir               no such file or directory                                    │
+│   failed   hardlink                 not supported                                                │
 │                                                                                                  │
-│ filter: btop                                                                                     │
-│                                                                                                  │
+│ ↑/↓ scroll · R re-run · tab switch · q quit                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

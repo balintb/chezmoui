@@ -12,6 +12,9 @@ import (
 	"strings"
 )
 
+// errNoPaths is returned by mutating commands invoked without any targets.
+var errNoPaths = errors.New("at least one path is required")
+
 type Client struct {
 	bin      string
 	extraEnv []string
@@ -183,7 +186,7 @@ func (c *Client) Diff(ctx context.Context, path string, reverse bool) (string, e
 
 func (c *Client) ReAdd(ctx context.Context, paths ...string) error {
 	if len(paths) == 0 {
-		return errors.New("re-add requires at least one path")
+		return errNoPaths
 	}
 	args := append([]string{"re-add", "--keep-going"}, paths...)
 	_, err := c.run(ctx, args...)
@@ -192,7 +195,7 @@ func (c *Client) ReAdd(ctx context.Context, paths ...string) error {
 
 func (c *Client) Apply(ctx context.Context, paths ...string) error {
 	if len(paths) == 0 {
-		return errors.New("apply requires at least one path")
+		return errNoPaths
 	}
 	args := append([]string{"apply", "--force", "--keep-going"}, paths...)
 	_, err := c.run(ctx, args...)

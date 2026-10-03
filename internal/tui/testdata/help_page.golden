@@ -1,5 +1,5 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│   All   │   Modified (1)   │   Help                                                              │
+│   All   │   Modified (1)   │   Unmanaged   │   Ignored   │   Doctor   │   Help                   │
 │ Keybindings                                                                                      │
 │                                                                                                  │
 │ Movement                                                                                         │
@@ -26,6 +26,7 @@
 │   enter                view diff                                                                 │
 │   r                    re-add (live → source)                                                    │
 │   a                    apply (source → live)                                                     │
+│   A                    add unmanaged → source                                                    │
 │   u                    undo last action                                                          │
 │   R                    refresh                                                                   │
 │   S                    start sync session                                                        │

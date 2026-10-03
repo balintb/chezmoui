@@ -1,5 +1,5 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│   All   │   Modified   │   Help                                                                  │
+│   All   │   Modified   │   Unmanaged   │   Ignored   │   Doctor   │   Help                       │
 │ error: read status                                                                               │
 │                                                                                                  │
 │   detail   chezmoi status: permission denied                                                     │

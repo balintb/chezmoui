@@ -329,3 +329,79 @@ func containsAttr(attrs []Attribute, want Attribute) bool {
 	}
 	return false
 }
+
+func TestIntegration_Unmanaged_FindsSeededFile(t *testing.T) {
+	home, _ := fixture(t)
+	if err := os.WriteFile(filepath.Join(home, ".unmanagedfile"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cli := newTestClient(t, home)
+	paths, err := cli.Unmanaged(context.Background())
+	if err != nil {
+		t.Fatalf("Unmanaged: %v", err)
+	}
+	want := filepath.Join(home, ".unmanagedfile")
+	managedTarget := filepath.Join(home, ".testfile")
+	found := false
+	for _, p := range paths {
+		if p == want {
+			found = true
+		}
+		if p == managedTarget {
+			t.Errorf("managed .testfile must not appear in unmanaged list")
+		}
+	}
+	if !found {
+		t.Errorf("expected %s in unmanaged list, got %v", want, paths)
+	}
+}
+
+func TestIntegration_Add_ManagesFile(t *testing.T) {
+	home, _ := fixture(t)
+	live := filepath.Join(home, ".newfile")
+	if err := os.WriteFile(live, []byte("fresh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cli := newTestClient(t, home)
+	if err := cli.Add(context.Background(), live); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	entries, err := cli.Managed(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	managed := false
+	for _, e := range entries {
+		if e.Target == ".newfile" {
+			managed = true
+		}
+	}
+	if !managed {
+		t.Error(".newfile should be managed after Add")
+	}
+}
+
+func TestIntegration_Ignored_DoesNotError(t *testing.T) {
+	home, _ := fixture(t)
+	cli := newTestClient(t, home)
+	if _, err := cli.Ignored(context.Background()); err != nil {
+		t.Fatalf("Ignored: %v", err)
+	}
+}
+
+func TestIntegration_Doctor_ParsesChecks(t *testing.T) {
+	home, _ := fixture(t)
+	cli := newTestClient(t, home)
+	checks, err := cli.Doctor(context.Background())
+	if err != nil {
+		t.Fatalf("Doctor: %v", err)
+	}
+	if len(checks) == 0 {
+		t.Fatal("expected doctor output")
+	}
+	for _, c := range checks {
+		if c.Check == "" {
+			t.Errorf("doctor check with empty name: %#v", c)
+		}
+	}
+}

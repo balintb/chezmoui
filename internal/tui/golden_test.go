@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/balintb/chezmoui/internal/chezmoi"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -101,6 +102,40 @@ func TestGolden_ErrorView(t *testing.T) {
 	m.err = opError{Op: "read status", Err: errString("chezmoi status: permission denied")}
 	m.retry = nil
 	assertGolden(t, "error_view", goldenView(t, m, 100, 20))
+}
+
+// gotoInspectTab loads the model then switches to an inspect tab, applying the tab's load command so the view has data.
+func gotoInspectTab(t *testing.T, m Model, tab tabID) Model {
+	t.Helper()
+	if cmd := m.switchTab(tab); cmd != nil {
+		m, _ = applyMsg(t, m, runCmd(t, cmd))
+	}
+	return m
+}
+
+func TestGolden_UnmanagedTab(t *testing.T) {
+	m := loadedModel(t, sampleBackend())
+	m = gotoInspectTab(t, m, tabUnmanaged)
+	assertGolden(t, "unmanaged_tab", goldenView(t, m, 100, 24))
+}
+
+func TestGolden_IgnoredTab(t *testing.T) {
+	m := loadedModel(t, sampleBackend())
+	m = gotoInspectTab(t, m, tabIgnored)
+	assertGolden(t, "ignored_tab", goldenView(t, m, 100, 24))
+}
+
+func TestGolden_DoctorTab(t *testing.T) {
+	b := sampleBackend()
+	b.doctor = []chezmoi.DoctorCheck{
+		{Result: "ok", Check: "version", Message: "v2.73.0"},
+		{Result: "info", Check: "config-file", Message: "not found"},
+		{Result: "error", Check: "source-dir", Message: "no such file or directory"},
+		{Result: "failed", Check: "hardlink", Message: "not supported"},
+	}
+	m := loadedModel(t, b)
+	m = gotoInspectTab(t, m, tabDoctor)
+	assertGolden(t, "doctor_tab", goldenView(t, m, 100, 24))
 }
 
 func TestGolden_FilterPrompt(t *testing.T) {
