@@ -63,18 +63,22 @@ func TestSummarizeAlignment_CountsMatchFlags(t *testing.T) {
 				r.RightPresent = true
 			}
 			r.LooseMatch = rng.Intn(2) == 0
+			r.Modified = rng.Intn(4) == 0
 			rows = append(rows, r)
 		}
 		added, removed, loose := summarizeAlignment(rows)
 		var wantAdd, wantRem, wantLoose int
 		for _, r := range rows {
 			switch {
+			case r.Modified:
+				wantAdd++
+				wantRem++
+			case r.LooseMatch:
+				wantLoose++
 			case !r.LeftPresent && r.RightPresent:
 				wantAdd++
 			case r.LeftPresent && !r.RightPresent:
 				wantRem++
-			case r.LooseMatch:
-				wantLoose++
 			}
 		}
 		if added != wantAdd || removed != wantRem || loose != wantLoose {

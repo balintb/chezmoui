@@ -91,21 +91,41 @@ func TestAlignLines_Deletion(t *testing.T) {
 }
 
 func TestAlignLines_Modification(t *testing.T) {
+	// A single changed line is paired into one Modified row (word-level diff), not two separate add/delete rows.
 	got := alignLines("a\nb\nc\n", "a\nB\nc\n")
-	if len(got) != 4 {
-		t.Fatalf("want 4 rows (matched a, del b, ins B, matched c), got %d: %#v", len(got), got)
+	if len(got) != 3 {
+		t.Fatalf("want 3 rows (match a, Modified b/B, match c), got %d: %#v", len(got), got)
 	}
-	leftOnly, rightOnly := 0, 0
+	if !got[1].Modified {
+		t.Errorf("middle row should be Modified, got %#v", got[1])
+	}
+	if got[1].Left != "b" || got[1].Right != "B" {
+		t.Errorf("modified row content = %q/%q", got[1].Left, got[1].Right)
+	}
+}
+
+func TestAlignLines_UnpairedReplacementStaysSplit(t *testing.T) {
+	// 2 deletions vs 1 insertion: only one pair forms; the leftover stays a delete row.
+	got := alignLines("a\nb\nd\nz\n", "a\nX\nz\n")
+	delOnly, addOnly, modified := 0, 0, 0
 	for _, r := range got {
-		if r.LeftPresent && !r.RightPresent {
-			leftOnly++
-		}
-		if !r.LeftPresent && r.RightPresent {
-			rightOnly++
+		switch {
+		case r.Modified:
+			modified++
+		case r.LeftPresent && !r.RightPresent:
+			delOnly++
+		case !r.LeftPresent && r.RightPresent:
+			addOnly++
 		}
 	}
-	if leftOnly != 1 || rightOnly != 1 {
-		t.Errorf("want 1 left-only and 1 right-only, got left=%d right=%d", leftOnly, rightOnly)
+	if modified != 1 {
+		t.Errorf("want 1 paired modification, got %d (%#v)", modified, got)
+	}
+	if delOnly != 1 {
+		t.Errorf("want 1 leftover deletion, got %d (%#v)", delOnly, got)
+	}
+	if addOnly != 0 {
+		t.Errorf("want 0 leftover insertions, got %d", addOnly)
 	}
 }
 
@@ -327,5 +347,66 @@ func TestTruncOrPad(t *testing.T) {
 	}
 	if got := truncOrPad("abc", 3); got != "abc" {
 		t.Errorf("exact: %q", got)
+	}
+}
+
+func TestRenderChanged_EmphasizesOnlyChangedTokens(t *testing.T) {
+	// left/right share "export " and differ in the rest.
+	left, right := "export EDITOR=vi", "export EDITOR=nvim"
+	l := renderChanged(left, right, panelSideLeft, 40)
+	r := renderChanged(left, right, panelSideRight, 40)
+
+	plainL := stripANSI(l)
+	plainR := stripANSI(r)
+	if !strings.Contains(plainL, "EDITOR=vi") || !strings.Contains(plainR, "EDITOR=nvim") {
+		t.Fatalf("content missing: l=%q r=%q", plainL, plainR)
+	}
+	// The emph style must appear on the changed glyphs.
+	if !strings.Contains(l, "\x1b[") || !strings.Contains(r, "\x1b[") {
+		t.Errorf("expected styled output")
+	}
+	// Emphasis background (48;5 or 48;2) must appear at least once per side.
+	if !hasBackgroundFill(l) || !hasBackgroundFill(r) {
+		t.Errorf("changed tokens should carry an emphasis background")
+	}
+}
+
+func TestRenderChanged_PadsToWidth(t *testing.T) {
+	for _, w := range []int{20, 40, 80} {
+		out := stripANSI(renderChanged("a b", "a c", panelSideLeft, w))
+		if got := len([]rune(out)); got != w {
+			t.Errorf("width %d: got %d visible runes", w, got)
+		}
+	}
+}
+
+func TestRenderChanged_TruncatesLongLines(t *testing.T) {
+	long := strings.Repeat("x", 200)
+	out := stripANSI(renderChanged(long, long+"y", panelSideLeft, 30))
+	if got := len([]rune(out)); got != 30 {
+		t.Errorf("truncated line should be exactly 30 runes, got %d", got)
+	}
+}
+
+func TestRenderChanged_UnchangedLineHasNoEmphasis(t *testing.T) {
+	out := renderChanged("same line", "same line", panelSideLeft, 30)
+	// No emphasis style should be applied when nothing changed.
+	if strings.Contains(out, "\x1b[1;") {
+		t.Errorf("unchanged line should not be bold-emphasized: %q", out)
+	}
+}
+
+func TestFormatPanelCell_ModifiedPairUsesBothColors(t *testing.T) {
+	r := alignedRow{Left: "a = 1", Right: "a = 2", LeftPresent: true, RightPresent: true, LeftNum: 1, RightNum: 1, Modified: true}
+	l := formatPanelCell(r, panelSideLeft, 30)
+	rr := formatPanelCell(r, panelSideRight, 30)
+	if stripANSI(l) == stripANSI(rr) {
+		t.Error("left and right cells should render distinct content")
+	}
+	if !hasBackgroundFill(l) {
+		t.Error("modified left cell should be colored")
+	}
+	if !hasBackgroundFill(rr) {
+		t.Error("modified right cell should be colored")
 	}
 }

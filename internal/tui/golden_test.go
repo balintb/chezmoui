@@ -147,8 +147,23 @@ func TestGolden_FilterPrompt(t *testing.T) {
 
 func TestGolden_UnifiedDiff(t *testing.T) {
 	m, _ := sideFixture(t)
-	m, _ = press(t, m, 'u')
+	m, _ = press(t, m, 'U')
+	if !m.sideUnified {
+		t.Fatal("golden setup: expected unified mode")
+	}
 	assertGolden(t, "unified_diff", goldenView(t, m, 100, 24))
+}
+
+func TestGolden_WordLevelDiff(t *testing.T) {
+	b := sampleBackend()
+	b.cat = "export EDITOR=vi\nPATH=/usr/bin\nunchanged line\n"
+	m := loadedModel(t, b).WithReadFile(func(string) ([]byte, error) {
+		return []byte("export EDITOR=nvim\nPATH=/usr/local/bin\nunchanged line\n"), nil
+	})
+	m = cursorTo(t, m, ".config/btop/btop.conf")
+	_, cmd := applyMsg(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = applyMsg(t, m, runCmd(t, cmd))
+	assertGolden(t, "word_level_diff", goldenView(t, m, 100, 20))
 }
 
 type errString string

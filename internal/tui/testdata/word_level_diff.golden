@@ -1,8 +1,11 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ⚡ Sync session  repo · main  3 uncommitted                                                      │
-│ Reviewing 1 of 2 — .bashrc  +1  −1   0 done · 2 left                                             │
+│   All   │   Modified (1)   │   Unmanaged   │   Ignored   │   Doctor   │   Help                   │
+│ .config/btop/btop.conf  +2  −2                                                                   │
+│ target (chezmoi)  vs  live (filesystem)                                                          │
 │ ╭─────────────────────────────────────────────╮ ╭─────────────────────────────────────────────╮  │
-│ │    1 target line                            │ │    1 live line                              │  │
+│ │    1 export EDITOR=vi                       │ │    1 export EDITOR=nvim                     │  │
+│ │    2 PATH=/usr/bin                          │ │    2 PATH=/usr/local/bin                    │  │
+│ │    3 unchanged line                         │ │    3 unchanged line                         │  │
 │ ╰─────────────────────────────────────────────╯ ╰─────────────────────────────────────────────╯  │
 │                                                                                                  │
 │                                                                                                  │
@@ -14,11 +17,5 @@
 │                                                                                                  │
 │                                                                                                  │
 │                                                                                                  │
-│                                                                                                  │
-│                                                                                                  │
-│                                                                                                  │
-│                                                                                                  │
-│                                                                                                  │
-│                                                                                                  │
-│ [k] keep live   [v] revert   [s] skip   [←] back   [q/esc] end session                           │
+│ ↑/↓ scroll · [/] hunk · U unified · r re-add · a apply · esc back                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

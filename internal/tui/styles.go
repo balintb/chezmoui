@@ -34,6 +34,15 @@ var (
 	phantomLineStyle = lipgloss.NewStyle().Background(colorPhantomBg).Foreground(colorMuted)
 	hunkLineStyle    = lipgloss.NewStyle().Background(colorHunkBg).Foreground(colorAccent).Bold(true)
 
+	// Emphasis styles highlight the exact tokens that changed within a line.
+	addEmphStyle = lipgloss.NewStyle().Background(colorAddEmphBg).Foreground(colorAddEmphFg).Bold(true)
+	delEmphStyle = lipgloss.NewStyle().Background(colorDelEmphBg).Foreground(colorDelEmphFg).Bold(true)
+
+	colorAddEmphBg = lipgloss.AdaptiveColor{Light: "#8fe28f", Dark: "#2f7a37"}
+	colorAddEmphFg = lipgloss.AdaptiveColor{Light: "#04310a", Dark: "#e6ffe6"}
+	colorDelEmphBg = lipgloss.AdaptiveColor{Light: "#f0a0a0", Dark: "#8a2f2f"}
+	colorDelEmphFg = lipgloss.AdaptiveColor{Light: "#430404", Dark: "#ffe6e6"}
+
 	colorLooseBg   = lipgloss.AdaptiveColor{Light: "#fff5d0", Dark: "#3a3220"}
 	colorLooseBgFg = lipgloss.AdaptiveColor{Light: "#5a4500", Dark: "#e0c97a"}
 	looseLineStyle = lipgloss.NewStyle().Background(colorLooseBg).Foreground(colorLooseBgFg)

@@ -733,3 +733,40 @@ func TestE2E_Doctor_ShowsChecks(t *testing.T) {
 		t.Errorf("doctor view should list checks:\n%s", view)
 	}
 }
+
+func TestE2E_WordLevelDiff_PairsModifiedLines(t *testing.T) {
+	m, _, home := e2eFixture(t)
+	srcDir := filepath.Join(home, ".local", "share", "chezmoi")
+	if err := os.WriteFile(filepath.Join(srcDir, "dot_testfile"), []byte("export EDITOR=vi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".testfile"), []byte("export EDITOR=nvim\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, msg := range drainBatch(m.Init()) {
+		m, _ = step(t, m, msg)
+	}
+	m, _ = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	m, cmd := step(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	msg := drainCmd(t, cmd)
+	if e, ok := msg.(errMsg); ok {
+		t.Fatalf("load failed: %v", e.err)
+	}
+	m, _ = step(t, m, msg)
+
+	rows := alignLines(m.sideTarget, m.sideLive)
+	modified := 0
+	for _, r := range rows {
+		if r.Modified {
+			modified++
+		}
+	}
+	if modified != 1 {
+		t.Fatalf("want 1 paired modification, got %d (%#v)", modified, rows)
+	}
+	// The rendered view must contain the emphasis escape sequences.
+	if !strings.Contains(m.vp.View(), "\x1b[1;") {
+		t.Errorf("word-level emphasis should appear in the rendered diff")
+	}
+}
