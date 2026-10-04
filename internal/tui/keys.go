@@ -15,6 +15,8 @@ type keyMap struct {
 	Apply       key.Binding
 	Undo        key.Binding
 	Add         key.Binding
+	Commit      key.Binding
+	Push        key.Binding
 	OnlyMod     key.Binding
 	Refresh     key.Binding
 	Search      key.Binding
@@ -54,6 +56,8 @@ var keys = keyMap{
 	Apply:       key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "apply (source → live)")),
 	Undo:        key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "undo last action")),
 	Add:         key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "add unmanaged → source")),
+	Commit:      key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "commit source changes")),
+	Push:        key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "push source branch")),
 	OnlyMod:     key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "modified-only")),
 	Refresh:     key.NewBinding(key.WithKeys("R", "ctrl+r"), key.WithHelp("R", "refresh")),
 	Search:      key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
@@ -108,6 +112,7 @@ func helpGroups() []helpGroup {
 		}},
 		{"Actions", [][2]string{
 			b(keys.View), b(keys.ReAdd), b(keys.Apply), b(keys.Add), b(keys.Undo), b(keys.Refresh), b(keys.SessionStart),
+			b(keys.Commit), b(keys.Push),
 		}},
 		{"Diff", [][2]string{
 			b(keys.SideMode), b(keys.Wrap), b(keys.ScrollLeft), b(keys.ScrollRight), b(keys.NextHunk), b(keys.PrevHunk),

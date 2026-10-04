@@ -71,12 +71,12 @@ var (
 			Padding(0, 1)
 
 	tabActiveStyle = lipgloss.NewStyle().
-			Padding(0, 2).
+			Padding(0, 1).
 			Background(colorAccent).
 			Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#0a0a14"}).
 			Bold(true)
 	tabInactiveStyle = lipgloss.NewStyle().
-				Padding(0, 2).
+				Padding(0, 1).
 				Foreground(colorMuted)
 	tabSeparatorStyle = lipgloss.NewStyle().
 				Foreground(colorMuted)

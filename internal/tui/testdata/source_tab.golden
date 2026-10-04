@@ -1,8 +1,10 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  All  │  Modified  │  Unmanaged  │  Ignored  │  Source  │  Doctor  │  Help                       │
-│ error: read status                                                                               │
+│  All  │  Modified (1)  │  Unmanaged (2)  │  Ignored (1)  │  Source (2)  │  Doctor  │  Help       │
+│ Source  main → origin/main  ↑2                                                                   │
 │                                                                                                  │
-│   detail   chezmoi status: permission denied                                                     │
+│    M modified  dot_bashrc                                                                        │
+│   ?? untracked dot_zshrc                                                                         │
 │                                                                                                  │
-│ [R] reload   [q] quit                                                                            │
+│ c commit · P push · R refresh                                                                    │
+│ ↑/↓ scroll · c commit · P push · R refresh · q quit                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

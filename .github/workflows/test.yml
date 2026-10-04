@@ -37,6 +37,7 @@ jobs:
           go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseStatus -fuzztime=15s
           go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseAttributes -fuzztime=15s
           go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseDoctor -fuzztime=15s
+          go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseRepoStatus -fuzztime=15s
           go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParsePathList -fuzztime=15s
 
   integration:

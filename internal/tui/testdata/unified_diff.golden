@@ -1,5 +1,5 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│   All   │   Modified (1)   │   Unmanaged   │   Ignored   │   Doctor   │   Help                   │
+│  All  │  Modified (1)  │  Unmanaged  │  Ignored  │  Source  │  Doctor  │  Help                   │
 │ .config/btop/btop.conf  +2  −1                                                                   │
 │ unified diff · 2 hunk(s)                                                                         │
 │ diff --git a/dot_bashrc b/dot_bashrc                                                             │

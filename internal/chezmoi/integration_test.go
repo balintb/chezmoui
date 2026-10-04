@@ -405,3 +405,102 @@ func TestIntegration_Doctor_ParsesChecks(t *testing.T) {
 		}
 	}
 }
+
+func TestIntegration_RepoStatus_RealRepo(t *testing.T) {
+	home, _ := fixture(t)
+	srcDir := filepath.Join(home, ".local", "share", "chezmoi")
+	runGit(t, srcDir, "init", "-q")
+	runGit(t, srcDir, "config", "user.email", "test@example.com")
+	runGit(t, srcDir, "config", "user.name", "Test")
+	runGit(t, srcDir, "add", "-A")
+	runGit(t, srcDir, "commit", "-q", "-m", "init")
+
+	cli := newTestClient(t, home)
+	status, err := cli.RepoStatus(context.Background())
+	if err != nil {
+		t.Fatalf("RepoStatus: %v", err)
+	}
+	if status.Branch == "" {
+		t.Error("expected a branch name")
+	}
+	if !status.Clean() {
+		t.Errorf("fresh repo should be clean, got %#v", status.Changes)
+	}
+
+	// Add a new file and confirm it shows up.
+	if err := os.WriteFile(filepath.Join(srcDir, "dot_newfile"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status, err = cli.RepoStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Untracked() != 1 {
+		t.Errorf("expected 1 untracked change, got %d", status.Untracked())
+	}
+}
+
+func TestIntegration_GitCommit_RealRepo(t *testing.T) {
+	home, _ := fixture(t)
+	srcDir := filepath.Join(home, ".local", "share", "chezmoi")
+	runGit(t, srcDir, "init", "-q")
+	runGit(t, srcDir, "config", "user.email", "test@example.com")
+	runGit(t, srcDir, "config", "user.name", "Test")
+
+	cli := newTestClient(t, home)
+	if err := cli.GitCommit(context.Background(), "initial commit"); err != nil {
+		t.Fatalf("GitCommit: %v", err)
+	}
+	out, err := cli.Git(context.Background(), "log", "--oneline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "initial commit") {
+		t.Errorf("commit not found in log: %q", out)
+	}
+	if err := cli.GitCommit(context.Background(), "   "); err == nil {
+		t.Error("empty message should be rejected")
+	}
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+func TestIntegration_GitPush_ToLocalRemote(t *testing.T) {
+	home, _ := fixture(t)
+	srcDir := filepath.Join(home, ".local", "share", "chezmoi")
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	if err := os.MkdirAll(remote, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, remote, "init", "--bare", "-q")
+
+	runGit(t, srcDir, "init", "-q", "-b", "main")
+	runGit(t, srcDir, "config", "user.email", "test@example.com")
+	runGit(t, srcDir, "config", "user.name", "Test")
+	runGit(t, srcDir, "remote", "add", "origin", remote)
+
+	cli := newTestClient(t, home)
+	if err := cli.GitCommit(context.Background(), "first"); err != nil {
+		t.Fatalf("GitCommit: %v", err)
+	}
+	if err := cli.GitPush(context.Background()); err != nil {
+		t.Fatalf("GitPush: %v", err)
+	}
+
+	// The remote should now contain the pushed commit.
+	cmd := exec.Command("git", "--git-dir", remote, "log", "--oneline")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("remote log: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "first") {
+		t.Errorf("remote missing pushed commit: %q", out)
+	}
+}

@@ -5,6 +5,7 @@ package tui
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -639,16 +640,21 @@ func TestE2E_Undo_ReAddThenRestoreSource(t *testing.T) {
 	}
 }
 
-// gotoE2ETab switches tabs and drives the resulting load command.
-func gotoE2ETab(t *testing.T, m Model, n int) Model {
+// gotoE2ETab switches to target and drives the resulting load command.
+func gotoE2ETab(t *testing.T, m Model, target tabID) Model {
 	t.Helper()
-	for i := 0; i < n; i++ {
-		var cmd tea.Cmd
+	for i := 0; i <= len(tabs); i++ {
+		if m.activeTab == target {
+			return m
+		}
 		next, cmd := step(t, m, tea.KeyMsg{Type: tea.KeyTab})
 		m = next
 		if cmd != nil {
 			m, _ = step(t, m, drainCmd(t, cmd))
 		}
+	}
+	if m.activeTab != target {
+		t.Fatalf("could not reach tab %v, ended on %v", target, m.activeTab)
 	}
 	return m
 }
@@ -662,7 +668,7 @@ func TestE2E_Unmanaged_AddToSource(t *testing.T) {
 	for _, msg := range drainBatch(m.Init()) {
 		m, _ = step(t, m, msg)
 	}
-	m = gotoE2ETab(t, m, 2) // Unmanaged
+	m = gotoE2ETab(t, m, tabUnmanaged)
 	if m.activeTab != tabUnmanaged {
 		t.Fatalf("expected Unmanaged tab, got %v", m.activeTab)
 	}
@@ -704,7 +710,7 @@ func TestE2E_Unmanaged_AddToSource(t *testing.T) {
 	}
 
 	// .fresh must now be managed.
-	m = gotoE2ETab(t, m, len(tabs)-2) // back around to All
+	m = gotoE2ETab(t, m, tabAll)
 	managed := false
 	for _, r := range m.rows {
 		if r.target == ".fresh" {
@@ -721,7 +727,7 @@ func TestE2E_Doctor_ShowsChecks(t *testing.T) {
 	for _, msg := range drainBatch(m.Init()) {
 		m, _ = step(t, m, msg)
 	}
-	m = gotoE2ETab(t, m, 4) // Doctor
+	m = gotoE2ETab(t, m, tabDoctor)
 	if m.activeTab != tabDoctor {
 		t.Fatalf("expected Doctor tab, got %v", m.activeTab)
 	}
@@ -806,5 +812,50 @@ func TestE2E_WrapAndScroll_RealDiff(t *testing.T) {
 	wrapped := stripANSI(m.vp.View())
 	if !strings.Contains(wrapped, "ZZ") {
 		t.Errorf("wrapped view should reveal the differing tail:\n%s", wrapped)
+	}
+}
+
+func initE2EGit(t *testing.T, home string) {
+	t.Helper()
+	srcDir := filepath.Join(home, ".local", "share", "chezmoi")
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"config", "user.email", "test@example.com"},
+		{"config", "user.name", "Test"},
+		{"add", "-A"},
+		{"commit", "-q", "-m", "init"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = srcDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+}
+
+func TestE2E_Source_ShowsRepoStatus(t *testing.T) {
+	m, _, home := e2eFixture(t)
+	initE2EGit(t, home)
+	// Diverge the live file so the source has pending changes.
+	srcDir := filepath.Join(home, ".local", "share", "chezmoi")
+	if err := os.WriteFile(filepath.Join(srcDir, "dot_testfile"), []byte("changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, msg := range drainBatch(m.Init()) {
+		m, _ = step(t, m, msg)
+	}
+	m = gotoE2ETab(t, m, tabSource)
+	if m.activeTab != tabSource {
+		t.Fatalf("expected Source tab, got %v", m.activeTab)
+	}
+	if m.repoStatus.Branch == "" {
+		t.Fatal("source status should report a branch")
+	}
+	if len(m.repoStatus.Changes) == 0 {
+		t.Fatal("expected pending changes in the source repo")
+	}
+	if !strings.Contains(stripANSI(m.View()), "Source") {
+		t.Errorf("source view not rendered:\n%s", stripANSI(m.View()))
 	}
 }

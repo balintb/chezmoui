@@ -76,6 +76,14 @@ func (m Model) handleErrorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.retry = nil
 		m.status = "dismissed"
 		return m, nil
+	case key.Matches(msg, keys.NextTab):
+		m.err = nil
+		m.retry = nil
+		return m, m.switchTab(tabID((int(m.activeTab) + 1) % tabCount))
+	case key.Matches(msg, keys.PrevTab):
+		m.err = nil
+		m.retry = nil
+		return m, m.switchTab(tabID((int(m.activeTab) + tabCount - 1) % tabCount))
 	case key.Matches(msg, keys.Quit):
 		return m, tea.Quit
 	}

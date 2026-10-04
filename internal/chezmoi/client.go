@@ -15,6 +15,9 @@ import (
 // errNoPaths is returned by mutating commands invoked without any targets.
 var errNoPaths = errors.New("at least one path is required")
 
+// errNoMessage is returned when a commit is requested without a message.
+var errNoMessage = errors.New("commit message is required")
+
 type Client struct {
 	bin      string
 	extraEnv []string
@@ -219,44 +222,15 @@ type GitStatus struct {
 }
 
 func (c *Client) GitStatus(ctx context.Context) (GitStatus, error) {
-	out, err := c.run(ctx, "git", "--", "status", "--porcelain=v1", "--branch")
+	status, err := c.RepoStatus(ctx)
 	if err != nil {
 		return GitStatus{}, err
 	}
-	var s GitStatus
-	for _, line := range strings.Split(string(out), "\n") {
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, "## ") {
-			rest := strings.TrimPrefix(line, "## ")
-			if i := strings.Index(rest, "..."); i >= 0 {
-				s.Branch = rest[:i]
-				up := rest[i+3:]
-				if sp := strings.Index(up, " "); sp >= 0 {
-					up = up[:sp]
-				}
-				s.Tracking = up
-			} else {
-				s.Branch = strings.TrimSpace(rest)
-			}
-			continue
-		}
-		if len(line) < 3 {
-			continue
-		}
-		x, y := line[0], line[1]
-		switch {
-		case x == '?' && y == '?':
-			s.Untracked++
-		default:
-			if x != ' ' && x != '?' {
-				s.Staged++
-			}
-			if y != ' ' {
-				s.Unstaged++
-			}
-		}
-	}
-	return s, nil
+	return GitStatus{
+		Branch:    status.Branch,
+		Tracking:  status.Tracking,
+		Staged:    status.Staged(),
+		Unstaged:  status.Unstaged(),
+		Untracked: status.Untracked(),
+	}, nil
 }

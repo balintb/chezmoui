@@ -35,12 +35,13 @@ const (
 	tabModified
 	tabUnmanaged
 	tabIgnored
+	tabSource
 	tabDoctor
 	tabHelp
 )
 
 // tabs lists the tab order shown in the tab bar.
-var tabs = []tabID{tabAll, tabModified, tabUnmanaged, tabIgnored, tabDoctor, tabHelp}
+var tabs = []tabID{tabAll, tabModified, tabUnmanaged, tabIgnored, tabSource, tabDoctor, tabHelp}
 
 // tabCount is the number of tabs; kept for callers that iterate the enum.
 const tabCount = int(tabHelp) + 1
@@ -55,6 +56,8 @@ func (t tabID) name() string {
 		return "Unmanaged"
 	case tabIgnored:
 		return "Ignored"
+	case tabSource:
+		return "Source"
 	case tabDoctor:
 		return "Doctor"
 	case tabHelp:
@@ -180,6 +183,13 @@ type RepoInfo interface {
 	GitStatus(ctx context.Context) (chezmoi.GitStatus, error)
 }
 
+// GitRepo exposes the source repository's status and gated write actions.
+type GitRepo interface {
+	RepoStatus(ctx context.Context) (chezmoi.RepoStatus, error)
+	GitCommit(ctx context.Context, message string) error
+	GitPush(ctx context.Context) error
+}
+
 // Backend is the composite of all chezmoi operations used by the TUI.
 type Backend interface {
 	Lister
@@ -187,6 +197,7 @@ type Backend interface {
 	Differ
 	Mutator
 	RepoInfo
+	GitRepo
 	Enumer
 	Diagnoser
 }
@@ -242,10 +253,18 @@ type Model struct {
 	doctorCursor    int
 	inspectLoaded   map[tabID]bool
 
-	pendingPaths []string
-	confirmMsg   string
-	pendingOp    pendingOp
-	pendingUndo  undoEntry
+	repoStatus   chezmoi.RepoStatus
+	repoCursor   int
+	repoLoaded   bool
+	gitWrite     bool
+	commitInput  textinput.Model
+	commitPrompt bool
+
+	pendingPaths     []string
+	confirmMsg       string
+	pendingOp        pendingOp
+	pendingUndo      undoEntry
+	pendingCommitMsg string
 
 	session sessionData
 
@@ -268,6 +287,7 @@ func NewModel(cli Backend) Model {
 		unmanagedSel:  map[string]bool{},
 		inspectLoaded: map[tabID]bool{},
 		filterInput:   newFilterInput(),
+		commitInput:   newCommitInput(),
 		loading:       true,
 	}
 }
@@ -280,6 +300,8 @@ const (
 	opApply
 	opUndo
 	opAdd
+	opCommit
+	opPush
 )
 
 func newFilterInput() textinput.Model {
@@ -565,6 +587,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		return m, tea.Batch(loadEntriesCmd(m.cli), loadUnmanagedCmd(m.cli))
 
+	case repoStatusLoadedMsg:
+		m.repoStatus = msg.status
+		if m.repoCursor >= len(msg.status.Changes) {
+			m.repoCursor = max(0, len(msg.status.Changes)-1)
+		}
+		m.err = nil
+		m.retry = nil
+		return m, nil
+
+	case gitActionDoneMsg:
+		m.status = msg.action
+		m.pendingCommitMsg = ""
+		m.pendingOp = opReAdd
+		m.confirmMsg = ""
+		m.err = nil
+		m.retry = nil
+		m.repoLoaded = false
+		return m, loadRepoStatusCmd(m.cli)
+
 	case errMsg:
 		m.err = msg.err
 		m.retry = msg.retry
@@ -578,6 +619,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "config load: " + msg.loadErr.Error()
 		}
 		m.repoPath = msg.cfg.RepoPath
+		m.gitWrite = msg.cfg.AllowGitWrite
 		if !msg.cfg.RepoConfirmed {
 			return m, m.enterRepoSetup()
 		}
@@ -671,6 +713,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				return m, addCmd(m.cli, paths)
 			}
+			if op == opCommit {
+				message := m.pendingCommitMsg
+				m.confirmMsg = ""
+				m.pendingPaths = nil
+				m.loading = true
+				return m, gitCommitCmd(m.cli, message)
+			}
+			if op == opPush {
+				m.confirmMsg = ""
+				m.pendingPaths = nil
+				m.loading = true
+				return m, gitPushCmd(m.cli)
+			}
 			undo := m.buildUndo(op, paths)
 			m.confirmMsg = ""
 			m.pendingPaths = nil
@@ -683,6 +738,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirmMsg = ""
 			m.pendingPaths = nil
 			m.pendingOp = opReAdd
+			m.pendingCommitMsg = ""
 			m.status = "cancelled"
 		}
 		return m, nil
@@ -725,6 +781,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if isInspectTab(m.activeTab) {
 		return m.updateInspect(msg)
+	}
+	if m.activeTab == tabSource {
+		return m.updateSource(msg)
 	}
 
 	switch m.state {
@@ -935,6 +994,10 @@ func (m Model) scrollWheel(delta int) (tea.Model, tea.Cmd) {
 	}
 	if isInspectTab(m.activeTab) {
 		return m.scrollInspect(delta)
+	}
+	if m.activeTab == tabSource {
+		m.repoCursor = clampCursor(m.repoCursor+delta, len(m.repoStatus.Changes))
+		return m, nil
 	}
 	if m.state == viewSideBySide {
 		for i := 0; i < 3; i++ {
@@ -1211,6 +1274,10 @@ func (m Model) viewTabBar() string {
 			if n := len(m.ignored); n > 0 {
 				label = fmt.Sprintf("%s (%d)", label, n)
 			}
+		case tabSource:
+			if n := len(m.repoStatus.Changes); n > 0 {
+				label = fmt.Sprintf("%s (%d)", label, n)
+			}
 		}
 		var styled string
 		if t == m.activeTab {
@@ -1239,6 +1306,8 @@ func (m Model) viewBody() string {
 		return m.viewHelpPage()
 	case isInspectTab(m.activeTab):
 		return m.viewInspect()
+	case m.activeTab == tabSource:
+		return m.viewSource()
 	case m.loading:
 		return mutedStyle.Render("loading…")
 	case m.state == viewSideBySide:
@@ -1445,6 +1514,11 @@ func (m Model) contextHelp() string {
 		return mutedStyle.Render("↑/↓ scroll · R refresh · tab switch · q quit")
 	case tabDoctor:
 		return mutedStyle.Render("↑/↓ scroll · R re-run · tab switch · q quit")
+	case tabSource:
+		if m.gitWrite {
+			return mutedStyle.Render("↑/↓ scroll · c commit · P push · R refresh · q quit")
+		}
+		return mutedStyle.Render("↑/↓ scroll · R refresh · (git write disabled) · q quit")
 	}
 	switch m.state {
 	case viewSideBySide:

@@ -12,6 +12,8 @@ import (
 type Config struct {
 	RepoPath      string `json:"repo_path"`
 	RepoConfirmed bool   `json:"repo_confirmed"`
+	// AllowGitWrite enables commit/push actions from the source panel. It is off by default so the TUI never mutates the repository history unless the user opts in.
+	AllowGitWrite bool `json:"allow_git_write"`
 }
 
 type Store struct {

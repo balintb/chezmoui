@@ -13,6 +13,7 @@ A simple TUI for [chezmoi](https://www.chezmoi.io/).
 - undo the last action from a local snapshot
 - source-state attribute chips (template, private, executable, encrypted, scripts, …)
 - Unmanaged and Ignored tabs, with add-to-source
+- Source tab: branch/status/changed files, plus gated commit and push
 - Doctor tab for one-key `chezmoi doctor` diagnostics
 - sync session: walk through every drifted file, decide keep/revert/skip per file
 - finds your dotfiles repo
@@ -57,6 +58,7 @@ go test ./internal/tui/ -run '^$' -fuzz=FuzzWrapRuns
 go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseStatus
 go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseAttributes
 go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseDoctor
+go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParseRepoStatus
 go test ./internal/chezmoi/ -run '^$' -fuzz=FuzzParsePathList
 ```
 
@@ -70,3 +72,11 @@ go test ./internal/tui -run TestGolden -update
 
 Backups for reverts go under `~/.cache/chezmoui/recoverable/`.
 Config at `~/.config/chezmoui/config.json`.
+
+Commit and push from the Source tab are disabled by default. Opt in with:
+
+```json
+{
+  "allow_git_write": true
+}
+```

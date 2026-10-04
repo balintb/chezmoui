@@ -10,7 +10,7 @@ import (
 
 func TestStore_RoundTrip(t *testing.T) {
 	s := &Store{Path: filepath.Join(t.TempDir(), "config.json")}
-	want := Config{RepoPath: "/tmp/dotfiles", RepoConfirmed: true}
+	want := Config{RepoPath: "/tmp/dotfiles", RepoConfirmed: true, AllowGitWrite: true}
 	if err := s.Save(want); err != nil {
 		t.Fatalf("save: %v", err)
 	}

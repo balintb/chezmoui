@@ -1,5 +1,5 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│   All   │   Modified (1)   │   Unmanaged   │   Ignored   │   Doctor   │   Help                   │
+│  All  │  Modified (1)  │  Unmanaged  │  Ignored  │  Source  │  Doctor  │  Help                   │
 │ .config/btop/btop.conf  +1  −1                                                                   │
 │ target (chezmoi)  vs  live (filesystem)                                                          │
 │ ╭─────────────────────────────────────────────╮ ╭─────────────────────────────────────────────╮  │

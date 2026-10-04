@@ -125,6 +125,12 @@ func TestGolden_IgnoredTab(t *testing.T) {
 	assertGolden(t, "ignored_tab", goldenView(t, m, 100, 24))
 }
 
+func TestGolden_SourceTab(t *testing.T) {
+	m := goTab(t, loadedModel(t, repoBackend()), tabSource)
+	m.gitWrite = true
+	assertGolden(t, "source_tab", goldenView(t, m, 100, 20))
+}
+
 func TestGolden_DoctorTab(t *testing.T) {
 	b := sampleBackend()
 	b.doctor = []chezmoi.DoctorCheck{

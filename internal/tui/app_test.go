@@ -24,9 +24,15 @@ type stubBackend struct {
 	sourcePath string
 	gitStatus  chezmoi.GitStatus
 
-	unmanaged []string
-	ignored   []string
-	doctor    []chezmoi.DoctorCheck
+	unmanaged  []string
+	ignored    []string
+	doctor     []chezmoi.DoctorCheck
+	repoStatus chezmoi.RepoStatus
+
+	commitCalls []string
+	pushCalls   int
+	commitErr   error
+	pushErr     error
 
 	catCalls     []string
 	diffCalls    []string
@@ -80,6 +86,17 @@ func (s *stubBackend) Ignored(context.Context) ([]string, error) {
 func (s *stubBackend) Doctor(context.Context) ([]chezmoi.DoctorCheck, error) {
 	return s.doctor, nil
 }
+func (s *stubBackend) RepoStatus(context.Context) (chezmoi.RepoStatus, error) {
+	return s.repoStatus, nil
+}
+func (s *stubBackend) GitCommit(_ context.Context, message string) error {
+	s.commitCalls = append(s.commitCalls, message)
+	return s.commitErr
+}
+func (s *stubBackend) GitPush(context.Context) error {
+	s.pushCalls++
+	return s.pushErr
+}
 func (s *stubBackend) SourcePath(context.Context) (string, error) {
 	return s.sourcePath, nil
 }
@@ -100,6 +117,16 @@ func sampleBackend() *stubBackend {
 		},
 		unmanaged: []string{".zshrc", ".config/newapp/config"},
 		ignored:   []string{".cache/appstate"},
+		repoStatus: chezmoi.RepoStatus{
+			Branch:   "main",
+			Tracking: "origin/main",
+			Ahead:    1,
+			Changes: []chezmoi.GitChange{
+				{XY: " M", Path: "dot_bashrc"},
+				{XY: "??", Path: "dot_zshrc"},
+				{XY: "R ", Path: "dot_config/new", OrigPath: "dot_config/old"},
+			},
+		},
 	}
 }
 

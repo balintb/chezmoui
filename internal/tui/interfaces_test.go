@@ -14,6 +14,7 @@ var (
 	_ Differ    = (*stubBackend)(nil)
 	_ Mutator   = (*stubBackend)(nil)
 	_ RepoInfo  = (*stubBackend)(nil)
+	_ GitRepo   = (*stubBackend)(nil)
 	_ Enumer    = (*stubBackend)(nil)
 	_ Diagnoser = (*stubBackend)(nil)
 	_ Backend   = (*stubBackend)(nil)

@@ -83,6 +83,9 @@ func (m *Model) loadTabCmd(t tabID) tea.Cmd {
 
 // ensureTabLoaded fetches the tab's data the first time it is shown.
 func (m *Model) ensureTabLoaded(t tabID) tea.Cmd {
+	if t == tabSource {
+		return m.ensureRepoStatus()
+	}
 	if m.inspectLoaded[t] {
 		return nil
 	}

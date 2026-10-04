@@ -9,9 +9,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func tabPress(t *testing.T, m Model, n int) Model {
+// goTab advances from the current tab to target, driving each tab's load command so the destination has data.
+func goTab(t *testing.T, m Model, target tabID) Model {
 	t.Helper()
-	for i := 0; i < n; i++ {
+	for i := 0; i <= len(tabs); i++ {
+		if m.activeTab == target {
+			return m
+		}
 		next, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyTab})
 		mm, ok := next.(Model)
 		if !ok {
@@ -22,12 +26,15 @@ func tabPress(t *testing.T, m Model, n int) Model {
 			m, _ = applyMsg(t, m, runCmd(t, cmd))
 		}
 	}
+	if m.activeTab != target {
+		t.Fatalf("could not reach tab %v, ended on %v", target, m.activeTab)
+	}
 	return m
 }
 
 func loadedUnmanaged(t *testing.T) Model {
 	t.Helper()
-	m := tabPress(t, loadedModel(t, sampleBackend()), 2)
+	m := goTab(t, loadedModel(t, sampleBackend()), tabUnmanaged)
 	if m.activeTab != tabUnmanaged {
 		t.Fatalf("expected Unmanaged tab, got %v", m.activeTab)
 	}
@@ -68,7 +75,7 @@ func TestUnmanaged_ToggleSelection(t *testing.T) {
 
 func TestUnmanaged_AddSinglePromptsAndCallsBackend(t *testing.T) {
 	b := sampleBackend()
-	m := tabPress(t, loadedModel(t, b), 2)
+	m := goTab(t, loadedModel(t, b), tabUnmanaged)
 	m, _ = press(t, m, 'A')
 	if !strings.Contains(m.confirmMsg, "Add") {
 		t.Fatalf("A should prompt, got %q", m.confirmMsg)
@@ -91,7 +98,7 @@ func TestUnmanaged_AddSinglePromptsAndCallsBackend(t *testing.T) {
 
 func TestUnmanaged_AddBulkSelection(t *testing.T) {
 	b := sampleBackend()
-	m := tabPress(t, loadedModel(t, b), 2)
+	m := goTab(t, loadedModel(t, b), tabUnmanaged)
 	m, _ = applyMsg(t, m, tea.KeyMsg{Type: tea.KeySpace})
 	m, _ = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyDown})
 	m, _ = applyMsg(t, m, tea.KeyMsg{Type: tea.KeySpace})
@@ -108,7 +115,7 @@ func TestUnmanaged_AddBulkSelection(t *testing.T) {
 
 func TestUnmanaged_AddCancelDoesNotCall(t *testing.T) {
 	b := sampleBackend()
-	m := tabPress(t, loadedModel(t, b), 2)
+	m := goTab(t, loadedModel(t, b), tabUnmanaged)
 	m, _ = press(t, m, 'A')
 	m, _ = press(t, m, 'n')
 	if m.confirmMsg != "" {
@@ -122,7 +129,7 @@ func TestUnmanaged_AddCancelDoesNotCall(t *testing.T) {
 func TestUnmanaged_AddNothingSelected(t *testing.T) {
 	b := sampleBackend()
 	b.unmanaged = nil
-	m := tabPress(t, loadedModel(t, b), 2)
+	m := goTab(t, loadedModel(t, b), tabUnmanaged)
 	m, _ = press(t, m, 'A')
 	if m.confirmMsg != "" {
 		t.Errorf("empty list should not prompt, got %q", m.confirmMsg)
@@ -163,14 +170,14 @@ func TestAddCmd_ErrorCarriesRetry(t *testing.T) {
 func TestUnmanaged_EmptyState(t *testing.T) {
 	b := sampleBackend()
 	b.unmanaged = nil
-	m := tabPress(t, loadedModel(t, b), 2)
+	m := goTab(t, loadedModel(t, b), tabUnmanaged)
 	if !strings.Contains(stripANSI(m.View()), "(none)") {
 		t.Errorf("empty unmanaged tab should show a placeholder:\n%s", stripANSI(m.View()))
 	}
 }
 
 func TestIgnored_RendersReadOnly(t *testing.T) {
-	m := tabPress(t, loadedModel(t, sampleBackend()), 3)
+	m := goTab(t, loadedModel(t, sampleBackend()), tabIgnored)
 	if m.activeTab != tabIgnored {
 		t.Fatalf("expected Ignored tab, got %v", m.activeTab)
 	}
@@ -183,7 +190,7 @@ func TestIgnored_RendersReadOnly(t *testing.T) {
 	}
 	// No add action on the ignored tab.
 	b := sampleBackend()
-	m2 := tabPress(t, loadedModel(t, b), 3)
+	m2 := goTab(t, loadedModel(t, b), tabIgnored)
 	m2, _ = press(t, m2, 'A')
 	if m2.confirmMsg != "" {
 		t.Error("A must not prompt on the ignored tab")
@@ -196,7 +203,7 @@ func TestDoctor_RendersAndCounts(t *testing.T) {
 		{Result: "ok", Check: "version", Message: "v2"},
 		{Result: "error", Check: "source-dir", Message: "missing"},
 	}
-	m := tabPress(t, loadedModel(t, b), 4)
+	m := goTab(t, loadedModel(t, b), tabDoctor)
 	if m.activeTab != tabDoctor {
 		t.Fatalf("expected Doctor tab, got %v", m.activeTab)
 	}
@@ -210,7 +217,7 @@ func TestDoctor_RendersAndCounts(t *testing.T) {
 
 func TestInspect_RefreshKeyReloads(t *testing.T) {
 	b := sampleBackend()
-	m := tabPress(t, loadedModel(t, b), 2)
+	m := goTab(t, loadedModel(t, b), tabUnmanaged)
 	// Change the backend data, then refresh: the new data must appear.
 	b.unmanaged = []string{".only-after-refresh"}
 	m, cmd := press(t, m, 'R')
@@ -226,7 +233,7 @@ func TestInspect_RefreshKeyReloads(t *testing.T) {
 func TestInspect_CursorScrolling(t *testing.T) {
 	b := sampleBackend()
 	b.unmanaged = []string{"a", "b", "c"}
-	m := tabPress(t, loadedModel(t, b), 2)
+	m := goTab(t, loadedModel(t, b), tabUnmanaged)
 	m, _ = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyDown})
 	if m.unmanagedCursor != 1 {
 		t.Errorf("cursor = %d, want 1", m.unmanagedCursor)
@@ -246,7 +253,7 @@ func TestInspect_CursorScrolling(t *testing.T) {
 }
 
 func TestInspect_TabCountsInBar(t *testing.T) {
-	m := tabPress(t, loadedModel(t, sampleBackend()), 2)
+	m := goTab(t, loadedModel(t, sampleBackend()), tabUnmanaged)
 	view := stripANSI(m.View())
 	if !strings.Contains(view, "Unmanaged (2)") {
 		t.Errorf("tab bar should show unmanaged count:\n%s", view)
@@ -256,7 +263,7 @@ func TestInspect_TabCountsInBar(t *testing.T) {
 func TestInspect_ErrorSurfacesWithRetry(t *testing.T) {
 	b := sampleBackend()
 	b.unmanagedErr = errors.New("boom")
-	m := tabPress(t, loadedModel(t, b), 2)
+	m := goTab(t, loadedModel(t, b), tabUnmanaged)
 	if m.err == nil {
 		t.Fatal("unmanaged load error should surface")
 	}
@@ -272,7 +279,7 @@ func TestDoctor_CursorNavigation(t *testing.T) {
 		{Result: "ok", Check: "b", Message: "2"},
 		{Result: "ok", Check: "c", Message: "3"},
 	}
-	m := tabPress(t, loadedModel(t, b), 4)
+	m := goTab(t, loadedModel(t, b), tabDoctor)
 	m, _ = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyDown})
 	if m.doctorCursor != 1 {
 		t.Errorf("cursor = %d, want 1", m.doctorCursor)
@@ -294,7 +301,7 @@ func TestInspect_PgUpPgDown(t *testing.T) {
 	for i := range b.unmanaged {
 		b.unmanaged[i] = "p"
 	}
-	m := tabPress(t, loadedModel(t, b), 2)
+	m := goTab(t, loadedModel(t, b), tabUnmanaged)
 	m, _ = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyPgDown})
 	if m.unmanagedCursor != 10 {
 		t.Errorf("pgdown = %d, want 10", m.unmanagedCursor)
@@ -313,7 +320,7 @@ func TestInspect_PgUpPgDown(t *testing.T) {
 func TestIgnored_CursorNavigation(t *testing.T) {
 	b := sampleBackend()
 	b.ignored = []string{"a", "b"}
-	m := tabPress(t, loadedModel(t, b), 3)
+	m := goTab(t, loadedModel(t, b), tabIgnored)
 	m, _ = applyMsg(t, m, tea.KeyMsg{Type: tea.KeyDown})
 	if m.ignoredCursor != 1 {
 		t.Errorf("ignored cursor = %d, want 1", m.ignoredCursor)
@@ -331,7 +338,7 @@ func TestInspect_ScrollWheelDoctor(t *testing.T) {
 		{Result: "ok", Check: "a", Message: "1"},
 		{Result: "ok", Check: "b", Message: "2"},
 	}
-	m := tabPress(t, loadedModel(t, b), 4)
+	m := goTab(t, loadedModel(t, b), tabDoctor)
 	m, _ = applyMsg(t, m, tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown})
 	if m.doctorCursor != 1 {
 		t.Errorf("wheel down on doctor = %d, want 1", m.doctorCursor)
