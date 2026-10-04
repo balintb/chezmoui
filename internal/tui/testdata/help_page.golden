@@ -32,6 +32,9 @@
 │   S                    start sync session                                                        │
 │ Diff                                                                                             │
 │   U                    toggle unified/side-by-side                                               │
+│   w                    toggle line wrap                                                          │
+│   ⇧←/H                 scroll left                                                               │
+│   ⇧→/L                 scroll right                                                              │
 │   ]                    next hunk                                                                 │
 │   [                    prev hunk                                                                 │
 │ Sync session                                                                                     │
