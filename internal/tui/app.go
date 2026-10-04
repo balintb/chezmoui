@@ -225,6 +225,8 @@ type Model struct {
 	unifiedDiff string
 	hunks       []int
 	hunkCursor  int
+	sideWrap    bool
+	sideHScroll int
 	filtering   bool
 	filter      string
 	filterInput textinput.Model
@@ -842,6 +844,18 @@ func (m Model) updateSide(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.vp.SetContent(m.renderDiffBody())
 		m.vp.GotoTop()
 		return m, nil
+	case key.Matches(msg, keys.Wrap):
+		m.sideWrap = !m.sideWrap
+		m.sideHScroll = 0
+		m.vp.SetContent(m.renderDiffBody())
+		m.vp.GotoTop()
+		return m, nil
+	case key.Matches(msg, keys.ScrollLeft):
+		m.scrollHorizontal(-m.hScrollStep())
+		return m, nil
+	case key.Matches(msg, keys.ScrollRight):
+		m.scrollHorizontal(m.hScrollStep())
+		return m, nil
 	case key.Matches(msg, keys.NextHunk):
 		m.jumpHunk(1, m.hunks)
 		return m, nil
@@ -852,6 +866,21 @@ func (m Model) updateSide(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.vp, cmd = m.vp.Update(msg)
 	return m, cmd
+}
+
+// hScrollStep is the number of columns moved per horizontal scroll keypress.
+func (m Model) hScrollStep() int { return 4 }
+
+// scrollHorizontal shifts the diff horizontally and re-renders. Wrapping and horizontal scroll are mutually exclusive.
+func (m *Model) scrollHorizontal(delta int) {
+	if m.sideUnified || m.sideWrap {
+		return
+	}
+	m.sideHScroll += delta
+	if m.sideHScroll < 0 {
+		m.sideHScroll = 0
+	}
+	m.vp.SetContent(m.renderDiffBody())
 }
 
 // jumpHunk moves the viewport to the next or previous hunk header, wrapping around. A no-op when there are no hunks.
@@ -972,7 +1001,7 @@ func (m Model) renderSessionPanels() string {
 		return ""
 	}
 	bw, _ := m.bodyDims()
-	return renderPanels(e.target_contents, e.live_contents, bw)
+	return renderPanels(e.target_contents, e.live_contents, bw, viewOpts{wrap: m.sideWrap, hOffset: m.sideHScroll})
 }
 
 func (m Model) handleSessionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1422,7 +1451,10 @@ func (m Model) contextHelp() string {
 		if m.sideUnified {
 			return mutedStyle.Render("↑/↓ scroll · [/] hunk · U side-by-side · r re-add · a apply · esc back")
 		}
-		return mutedStyle.Render("↑/↓ scroll · [/] hunk · U unified · r re-add · a apply · esc back")
+		if m.sideWrap {
+			return mutedStyle.Render("↑/↓ scroll · w no-wrap · U unified · r re-add · a apply · esc back")
+		}
+		return mutedStyle.Render("↑/↓ scroll · ⇧←/⇧→ pan · w wrap · U unified · r re-add · esc back")
 	default:
 		if m.filter != "" {
 			return mutedStyle.Render("enter view · / edit filter · esc clear filter · r re-add · a apply · ? help · q quit")
@@ -1433,7 +1465,7 @@ func (m Model) contextHelp() string {
 
 func (m Model) renderSidePanels() string {
 	bw, _ := m.bodyDims()
-	return renderPanels(m.sideTarget, m.sideLive, bw)
+	return renderPanels(m.sideTarget, m.sideLive, bw, viewOpts{wrap: m.sideWrap, hOffset: m.sideHScroll})
 }
 
 // renderDiffBody renders whichever diff mode is active.

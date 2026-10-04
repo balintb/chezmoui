@@ -154,6 +154,31 @@ func TestGolden_UnifiedDiff(t *testing.T) {
 	assertGolden(t, "unified_diff", goldenView(t, m, 100, 24))
 }
 
+func longLineFixture(t *testing.T) Model {
+	t.Helper()
+	b := sampleBackend()
+	long := strings.Repeat("abcdefghij", 8) // 80 chars, wider than a panel
+	b.cat = long + "\n"
+	m := loadedModel(t, b).WithReadFile(func(string) ([]byte, error) {
+		return []byte(long + "XXXX\n"), nil
+	})
+	m = cursorTo(t, m, ".config/btop/btop.conf")
+	_, cmd := applyMsg(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = applyMsg(t, m, runCmd(t, cmd))
+	return m
+}
+
+func TestGolden_DiffClipped(t *testing.T) {
+	m := longLineFixture(t)
+	assertGolden(t, "diff_clipped", goldenView(t, m, 100, 16))
+}
+
+func TestGolden_DiffWrapped(t *testing.T) {
+	m := longLineFixture(t)
+	m, _ = press(t, m, 'w')
+	assertGolden(t, "diff_wrapped", goldenView(t, m, 100, 16))
+}
+
 func TestGolden_WordLevelDiff(t *testing.T) {
 	b := sampleBackend()
 	b.cat = "export EDITOR=vi\nPATH=/usr/bin\nunchanged line\n"

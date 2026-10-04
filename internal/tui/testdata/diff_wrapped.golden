@@ -1,12 +1,11 @@
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │   All   │   Modified (1)   │   Unmanaged   │   Ignored   │   Doctor   │   Help                   │
-│ .config/btop/btop.conf  +2  −1                                                                   │
+│ .config/btop/btop.conf  +1  −1                                                                   │
 │ target (chezmoi)  vs  live (filesystem)                                                          │
 │ ╭─────────────────────────────────────────────╮ ╭─────────────────────────────────────────────╮  │
-│ │    1 alpha                                  │ │    1 alpha                                  │  │
-│ │    2 bravo                                  │ │    2 BRAVO                                  │  │
-│ │    3 charlie                                │ │    3 charlie                                │  │
-│ │    ~                                        │ │    4 delta                                  │  │
+│ │    1 abcdefghijabcdefghijabcdefghijabcdefgh │ │    1 abcdefghijabcdefghijabcdefghijabcdefgh │  │
+│ │      ijabcdefghijabcdefghijabcdefghijabcdef │ │      ijabcdefghijabcdefghijabcdefghijabcdef │  │
+│ │      ghij                                   │ │      ghijXXXX                               │  │
 │ ╰─────────────────────────────────────────────╯ ╰─────────────────────────────────────────────╯  │
 │                                                                                                  │
 │                                                                                                  │
@@ -14,8 +13,5 @@
 │                                                                                                  │
 │                                                                                                  │
 │                                                                                                  │
-│                                                                                                  │
-│                                                                                                  │
-│                                                                                                  │
-│ ↑/↓ scroll · ⇧←/⇧→ pan · w wrap · U unified · r re-add · esc back                                │
+│ ↑/↓ scroll · w no-wrap · U unified · r re-add · a apply · esc back                               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

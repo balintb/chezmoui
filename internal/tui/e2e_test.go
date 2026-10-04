@@ -770,3 +770,41 @@ func TestE2E_WordLevelDiff_PairsModifiedLines(t *testing.T) {
 		t.Errorf("word-level emphasis should appear in the rendered diff")
 	}
 }
+
+func TestE2E_WrapAndScroll_RealDiff(t *testing.T) {
+	m, _, home := e2eFixture(t)
+	srcDir := filepath.Join(home, ".local", "share", "chezmoi")
+	long := strings.Repeat("ab", 80) // 160 chars, wider than a panel
+	if err := os.WriteFile(filepath.Join(srcDir, "dot_testfile"), []byte(long+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".testfile"), []byte(long+"ZZ\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, msg := range drainBatch(m.Init()) {
+		m, _ = step(t, m, msg)
+	}
+	m, _ = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	m, cmd := step(t, m, tea.KeyMsg{Type: tea.KeyEnter})
+	msg := drainCmd(t, cmd)
+	if e, ok := msg.(errMsg); ok {
+		t.Fatalf("load failed: %v", e.err)
+	}
+	m, _ = step(t, m, msg)
+
+	// Unwrapped: the clipped long line carries a scroll marker.
+	if !strings.Contains(stripANSI(m.vp.View()), "›") {
+		t.Errorf("clipped long line should show a scroll marker:\n%s", stripANSI(m.vp.View()))
+	}
+
+	// Wrap: the line splits into multiple visual lines with a blank gutter.
+	m, _ = step(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	if !m.sideWrap {
+		t.Fatal("w should enable wrap")
+	}
+	wrapped := stripANSI(m.vp.View())
+	if !strings.Contains(wrapped, "ZZ") {
+		t.Errorf("wrapped view should reveal the differing tail:\n%s", wrapped)
+	}
+}

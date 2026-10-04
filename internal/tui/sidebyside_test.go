@@ -149,7 +149,7 @@ func TestRenderSideBySide_LineCountsMatch(t *testing.T) {
 
 func TestRenderPanels_FitsWithinWidth_Regression(t *testing.T) {
 	for _, width := range []int{60, 80, 96, 100, 120, 200} {
-		got := stripANSI(renderPanels("left line\n", "right line\n", width))
+		got := stripANSI(renderPanels("left line\n", "right line\n", width, viewOpts{}))
 		lines := strings.Split(got, "\n")
 		if len(lines) == 0 {
 			t.Fatalf("width %d: empty output", width)
@@ -338,68 +338,59 @@ func TestRenderSideBySide_LooseRowUsesLooseStyle(t *testing.T) {
 	}
 }
 
-func TestTruncOrPad(t *testing.T) {
-	if got := truncOrPad("ab", 5); got != "ab   " {
-		t.Errorf("pad: %q", got)
-	}
-	if got := truncOrPad("abcdef", 3); got != "abc" {
-		t.Errorf("trunc: %q", got)
-	}
-	if got := truncOrPad("abc", 3); got != "abc" {
-		t.Errorf("exact: %q", got)
-	}
+// renderRow renders a single aligned row through the current pipeline and returns the styled left and right visual lines.
+func renderRow(r alignedRow, contentW, hOffset int) (string, string) {
+	left := panelVisualLines(r, panelSideLeft, viewOpts{contentW: contentW, hOffset: hOffset})
+	right := panelVisualLines(r, panelSideRight, viewOpts{contentW: contentW, hOffset: hOffset})
+	return left[0], right[0]
 }
 
-func TestRenderChanged_EmphasizesOnlyChangedTokens(t *testing.T) {
+func TestPanel_EmphasizesOnlyChangedTokens(t *testing.T) {
 	// left/right share "export " and differ in the rest.
-	left, right := "export EDITOR=vi", "export EDITOR=nvim"
-	l := renderChanged(left, right, panelSideLeft, 40)
-	r := renderChanged(left, right, panelSideRight, 40)
+	r := alignedRow{Left: "export EDITOR=vi", Right: "export EDITOR=nvim", LeftPresent: true, RightPresent: true, LeftNum: 1, RightNum: 1, Modified: true}
+	l, rr := renderRow(r, 40, 0)
 
-	plainL := stripANSI(l)
-	plainR := stripANSI(r)
-	if !strings.Contains(plainL, "EDITOR=vi") || !strings.Contains(plainR, "EDITOR=nvim") {
-		t.Fatalf("content missing: l=%q r=%q", plainL, plainR)
+	if !strings.Contains(stripANSI(l), "EDITOR=vi") || !strings.Contains(stripANSI(rr), "EDITOR=nvim") {
+		t.Fatalf("content missing: l=%q r=%q", stripANSI(l), stripANSI(rr))
 	}
-	// The emph style must appear on the changed glyphs.
-	if !strings.Contains(l, "\x1b[") || !strings.Contains(r, "\x1b[") {
-		t.Errorf("expected styled output")
-	}
-	// Emphasis background (48;5 or 48;2) must appear at least once per side.
-	if !hasBackgroundFill(l) || !hasBackgroundFill(r) {
+	if !hasBackgroundFill(l) || !hasBackgroundFill(rr) {
 		t.Errorf("changed tokens should carry an emphasis background")
 	}
 }
 
-func TestRenderChanged_PadsToWidth(t *testing.T) {
+func TestPanel_PadsToWidth(t *testing.T) {
 	for _, w := range []int{20, 40, 80} {
-		out := stripANSI(renderChanged("a b", "a c", panelSideLeft, w))
-		if got := len([]rune(out)); got != w {
-			t.Errorf("width %d: got %d visible runes", w, got)
+		r := alignedRow{Left: "a b", Right: "a c", LeftPresent: true, RightPresent: true, LeftNum: 1, RightNum: 1, Modified: true}
+		l, _ := renderRow(r, w, 0)
+		// The gutter is 5 cells; the body must be exactly w wide.
+		body := strings.TrimPrefix(stripANSI(l), "   1 ")
+		if got := len([]rune(body)); got != w {
+			t.Errorf("width %d: body is %d runes", w, got)
 		}
 	}
 }
 
-func TestRenderChanged_TruncatesLongLines(t *testing.T) {
+func TestPanel_ClipsLongLinesToWidth(t *testing.T) {
 	long := strings.Repeat("x", 200)
-	out := stripANSI(renderChanged(long, long+"y", panelSideLeft, 30))
-	if got := len([]rune(out)); got != 30 {
-		t.Errorf("truncated line should be exactly 30 runes, got %d", got)
+	r := alignedRow{Left: long, LeftPresent: true, LeftNum: 1}
+	l, _ := renderRow(r, 30, 0)
+	body := strings.TrimPrefix(stripANSI(l), "   1 ")
+	if got := len([]rune(body)); got != 30 {
+		t.Errorf("clipped line should be exactly 30 runes, got %d", got)
 	}
 }
 
-func TestRenderChanged_UnchangedLineHasNoEmphasis(t *testing.T) {
-	out := renderChanged("same line", "same line", panelSideLeft, 30)
-	// No emphasis style should be applied when nothing changed.
-	if strings.Contains(out, "\x1b[1;") {
-		t.Errorf("unchanged line should not be bold-emphasized: %q", out)
+func TestPanel_UnchangedLineHasNoEmphasis(t *testing.T) {
+	r := alignedRow{Left: "same line", Right: "same line", LeftPresent: true, RightPresent: true, LeftNum: 1, RightNum: 1}
+	l, _ := renderRow(r, 30, 0)
+	if strings.Contains(l, "\x1b[1;") {
+		t.Errorf("unchanged line should not be bold-emphasized: %q", l)
 	}
 }
 
-func TestFormatPanelCell_ModifiedPairUsesBothColors(t *testing.T) {
+func TestPanel_ModifiedPairUsesBothColors(t *testing.T) {
 	r := alignedRow{Left: "a = 1", Right: "a = 2", LeftPresent: true, RightPresent: true, LeftNum: 1, RightNum: 1, Modified: true}
-	l := formatPanelCell(r, panelSideLeft, 30)
-	rr := formatPanelCell(r, panelSideRight, 30)
+	l, rr := renderRow(r, 30, 0)
 	if stripANSI(l) == stripANSI(rr) {
 		t.Error("left and right cells should render distinct content")
 	}

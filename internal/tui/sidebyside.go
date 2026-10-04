@@ -146,19 +146,276 @@ func splitConfigLines(s string) []string {
 	return strings.Split(s, "\n")
 }
 
+// viewOpts controls how a panel is laid out for one render pass.
+type viewOpts struct {
+	contentW int
+	wrap     bool
+	hOffset  int
+}
+
 func renderSideBySide(rows []alignedRow, colWidth int) (left, right string) {
+	return renderSideBySideOpts(rows, colWidth, viewOpts{})
+}
+
+func renderSideBySideOpts(rows []alignedRow, colWidth int, opts viewOpts) (left, right string) {
 	if colWidth < sideGutterWidth+5 {
 		colWidth = sideGutterWidth + 5
 	}
-	contentW := colWidth - sideGutterWidth
+	opts.contentW = colWidth - sideGutterWidth
+
 	var lb, rb strings.Builder
 	for _, r := range rows {
-		lb.WriteString(formatPanelCell(r, panelSideLeft, contentW))
-		lb.WriteString("\n")
-		rb.WriteString(formatPanelCell(r, panelSideRight, contentW))
-		rb.WriteString("\n")
+		for _, cell := range formatRowCells(r, opts) {
+			lb.WriteString(cell.left)
+			lb.WriteString("\n")
+			rb.WriteString(cell.right)
+			rb.WriteString("\n")
+		}
 	}
 	return lb.String(), rb.String()
+}
+
+// rowCell is one visual line for both panels of a single aligned row. A logical row that wraps produces several rowCells, one per visual line.
+type rowCell struct {
+	left  string
+	right string
+}
+
+// formatRowCells builds the visual line(s) for an aligned row, keeping both panels at the same number of lines so windowed scrolling stays in sync.
+func formatRowCells(r alignedRow, opts viewOpts) []rowCell {
+	leftLines := panelVisualLines(r, panelSideLeft, opts)
+	rightLines := panelVisualLines(r, panelSideRight, opts)
+	n := len(leftLines)
+	if len(rightLines) > n {
+		n = len(rightLines)
+	}
+	blank := gutterStyle.Render("   ~ ") + phantomLineStyle.Render(strings.Repeat(" ", opts.contentW))
+	cells := make([]rowCell, n)
+	for i := 0; i < n; i++ {
+		l, rr := blank, blank
+		if i < len(leftLines) {
+			l = leftLines[i]
+		}
+		if i < len(rightLines) {
+			rr = rightLines[i]
+		}
+		cells[i] = rowCell{left: l, right: rr}
+	}
+	return cells
+}
+
+// styledRun is a run of text with a single style. A row's logical content is a sequence of runs whose plain text concatenates back to the source line.
+type styledRun struct {
+	text  string
+	style lipgloss.Style
+}
+
+// panelRuns returns the styled runs for one side of an aligned row.
+func panelRuns(r alignedRow, side panelSide) []styledRun {
+	content := r.Left
+	otherPresent := r.RightPresent
+	base := lipgloss.NewStyle()
+	if side == panelSideRight {
+		content = r.Right
+		otherPresent = r.LeftPresent
+	}
+	switch {
+	case r.LooseMatch:
+		return []styledRun{{text: content, style: looseLineStyle}}
+	case !otherPresent && side == panelSideLeft:
+		return []styledRun{{text: content, style: delLineStyle}}
+	case !otherPresent && side == panelSideRight:
+		return []styledRun{{text: content, style: addLineStyle}}
+	case r.Modified:
+		return changedRuns(r.Left, r.Right, side)
+	default:
+		return []styledRun{{text: content, style: base}}
+	}
+}
+
+// changedRuns returns the runs for a modified line, emphasizing changed tokens.
+func changedRuns(left, right string, side panelSide) []styledRun {
+	leftSegs, rightSegs := wordDiff(left, right)
+	segs := leftSegs
+	base, emph := delLineStyle, delEmphStyle
+	if side == panelSideRight {
+		segs = rightSegs
+		base, emph = addLineStyle, addEmphStyle
+	}
+	runs := make([]styledRun, 0, len(segs))
+	for _, s := range segs {
+		style := base
+		if s.changed {
+			style = emph
+		}
+		runs = append(runs, styledRun{text: s.text, style: style})
+	}
+	return runs
+}
+
+// panelVisualLines renders one side of an aligned row into one or more visual lines according to the wrap and horizontal-scroll settings. The first line carries the line-number gutter; wrapped continuations use a blank gutter.
+func panelVisualLines(r alignedRow, side panelSide, opts viewOpts) []string {
+	present := r.LeftPresent
+	lineNum := r.LeftNum
+	if side == panelSideRight {
+		present = r.RightPresent
+		lineNum = r.RightNum
+	}
+	if !present {
+		return []string{gutterStyle.Render("   ~ ") + phantomLineStyle.Render(strings.Repeat(" ", opts.contentW))}
+	}
+
+	gutter := fmt.Sprintf("%4d ", lineNum)
+	blankGutter := "     "
+	runs := panelRuns(r, side)
+
+	if opts.wrap {
+		chunks := wrapRuns(runs, opts.contentW)
+		if len(chunks) == 0 {
+			chunks = [][]styledRun{nil}
+		}
+		lines := make([]string, len(chunks))
+		for i, chunk := range chunks {
+			g := gutter
+			if i > 0 {
+				g = blankGutter
+			}
+			lines[i] = gutterStyle.Render(g) + renderRuns(chunk, opts.contentW)
+		}
+		return lines
+	}
+
+	windowed, clippedLeft, clippedRight := windowRuns(runs, opts.hOffset, opts.contentW)
+	windowed = overlayClipped(windowed, clippedLeft, clippedRight, opts.contentW)
+	return []string{gutterStyle.Render(gutter) + renderRuns(windowed, opts.contentW)}
+}
+
+// windowRuns returns the run window [offset, offset+width) with styles intact, plus whether the line is clipped on the left/right.
+func windowRuns(runs []styledRun, offset, width int) ([]styledRun, bool, bool) {
+	total := 0
+	for _, run := range runs {
+		total += len([]rune(run.text))
+	}
+	clippedLeft := offset > 0
+	clippedRight := offset+width < total
+	if offset < 0 {
+		offset = 0
+	}
+
+	var out []styledRun
+	pos := 0
+	remaining := width
+	for _, run := range runs {
+		if remaining <= 0 {
+			break
+		}
+		runes := []rune(run.text)
+		runEnd := pos + len(runes)
+		if runEnd <= offset {
+			pos = runEnd
+			continue
+		}
+		start := max(0, offset-pos)
+		end := len(runes)
+		if end-start > remaining {
+			end = start + remaining
+		}
+		if start < end {
+			out = append(out, styledRun{text: string(runes[start:end]), style: run.style})
+			remaining -= end - start
+		}
+		pos = runEnd
+	}
+	return out, clippedLeft, clippedRight
+}
+
+// wrapRuns splits runs into chunks of at most width runes, preserving styles.
+func wrapRuns(runs []styledRun, width int) [][]styledRun {
+	if width <= 0 {
+		return [][]styledRun{runs}
+	}
+	var chunks [][]styledRun
+	var cur []styledRun
+	used := 0
+	for _, run := range runs {
+		runes := []rune(run.text)
+		for len(runes) > 0 {
+			space := width - used
+			if space == 0 {
+				chunks = append(chunks, cur)
+				cur, used = nil, 0
+				space = width
+			}
+			take := min(space, len(runes))
+			cur = append(cur, styledRun{text: string(runes[:take]), style: run.style})
+			used += take
+			runes = runes[take:]
+		}
+	}
+	if len(cur) > 0 || len(chunks) == 0 {
+		chunks = append(chunks, cur)
+	}
+	return chunks
+}
+
+// renderRuns styles runs and pads the result to width using the last run's style (all runs adjacent in a row share a background).
+func renderRuns(runs []styledRun, width int) string {
+	var b strings.Builder
+	visible := 0
+	var padStyle lipgloss.Style
+	for _, run := range runs {
+		b.WriteString(run.style.Render(run.text))
+		visible += len([]rune(run.text))
+		padStyle = run.style
+	}
+	if pad := width - visible; pad > 0 {
+		b.WriteString(padStyle.Render(strings.Repeat(" ", pad)))
+	}
+	return b.String()
+}
+
+// overlayClipped replaces the first/last visible rune with directional markers when the window is clipped, leaving the rest of the runs and styles intact.
+func overlayClipped(runs []styledRun, clippedLeft, clippedRight bool, width int) []styledRun {
+	if (!clippedLeft && !clippedRight) || width <= 0 {
+		return runs
+	}
+	out := make([]styledRun, len(runs))
+	copy(out, runs)
+	if clippedLeft && len(out) > 0 {
+		out[0].text = replaceFirstRune(out[0].text, '‹')
+	}
+	if clippedRight && len(out) > 0 {
+		last := len(out) - 1
+		out[last].text = replaceLastRune(out[last].text, '›')
+	}
+	return out
+}
+
+// plainRuns concatenates the text of runs, discarding styles.
+func plainRuns(runs []styledRun) string {
+	var b strings.Builder
+	for _, run := range runs {
+		b.WriteString(run.text)
+	}
+	return b.String()
+}
+
+func replaceFirstRune(s string, r rune) string {
+	runes := []rune(s)
+	if len(runes) == 0 {
+		return string(r)
+	}
+	runes[0] = r
+	return string(runes)
+}
+
+func replaceLastRune(s string, r rune) string {
+	runes := []rune(s)
+	if len(runes) == 0 {
+		return string(r)
+	}
+	runes[len(runes)-1] = r
+	return string(runes)
 }
 
 type panelSide int
@@ -168,96 +425,15 @@ const (
 	panelSideRight
 )
 
-func formatPanelCell(r alignedRow, side panelSide, contentW int) string {
-	present := r.LeftPresent
-	content := r.Left
-	lineNum := r.LeftNum
-	otherSidePresent := r.RightPresent
-	if side == panelSideRight {
-		present = r.RightPresent
-		content = r.Right
-		lineNum = r.RightNum
-		otherSidePresent = r.LeftPresent
-	}
-
-	var gutter string
-	if present {
-		gutter = fmt.Sprintf("%4d ", lineNum)
-	} else {
-		gutter = "   ~ "
-	}
-
-	if !present {
-		return gutterStyle.Render(gutter) + phantomLineStyle.Render(strings.Repeat(" ", contentW))
-	}
-
-	switch {
-	case r.LooseMatch:
-		return gutterStyle.Render(gutter) + looseLineStyle.Render(truncOrPad(content, contentW))
-	case !otherSidePresent && side == panelSideLeft:
-		return gutterStyle.Render(gutter) + delLineStyle.Render(truncOrPad(content, contentW))
-	case !otherSidePresent && side == panelSideRight:
-		return gutterStyle.Render(gutter) + addLineStyle.Render(truncOrPad(content, contentW))
-	case r.Modified:
-		// A replacement pair: color each side and emphasize the changed tokens.
-		return gutterStyle.Render(gutter) + renderChanged(r.Left, r.Right, side, contentW)
-	default:
-		return gutterStyle.Render(gutter) + truncOrPad(content, contentW)
-	}
-}
-
-// renderChanged renders one side of a modified line, emphasizing the tokens that differ from the other side.
-func renderChanged(left, right string, side panelSide, contentW int) string {
-	leftSegs, rightSegs := wordDiff(left, right)
-	segs := leftSegs
-	base, emph := delLineStyle, delEmphStyle
-	if side == panelSideRight {
-		segs = rightSegs
-		base, emph = addLineStyle, addEmphStyle
-	}
-	var b strings.Builder
-	visible := 0
-	for _, s := range segs {
-		if visible >= contentW {
-			break
-		}
-		runes := []rune(s.text)
-		if visible+len(runes) > contentW {
-			runes = runes[:contentW-visible]
-		}
-		style := base
-		if s.changed {
-			style = emph
-		}
-		b.WriteString(style.Render(string(runes)))
-		visible += len(runes)
-	}
-	if pad := contentW - visible; pad > 0 {
-		b.WriteString(base.Render(strings.Repeat(" ", pad)))
-	}
-	return b.String()
-}
-
-func truncOrPad(s string, width int) string {
-	r := []rune(s)
-	if len(r) > width {
-		return string(r[:width])
-	}
-	if len(r) < width {
-		return s + strings.Repeat(" ", width-len(r))
-	}
-	return s
-}
-
 // renderPanels lays out two bordered panels that together fit within width. panelStyle contributes a one-cell border on each side, so the content width passed to Width must reserve those two columns.
-func renderPanels(left, right string, width int) string {
+func renderPanels(left, right string, width int, opts viewOpts) string {
 	outer := (width - 1) / 2
 	inner := outer - 4
 	if inner < sideGutterWidth+5 {
 		inner = sideGutterWidth + 5
 	}
 	rows := alignLines(left, right)
-	l, r := renderSideBySide(rows, inner)
+	l, r := renderSideBySideOpts(rows, inner, opts)
 	lp := panelStyle.Width(outer - 2).Render(strings.TrimRight(l, "\n"))
 	rp := panelStyle.Width(outer - 2).Render(strings.TrimRight(r, "\n"))
 	return lipgloss.JoinHorizontal(lipgloss.Top, lp, " ", rp)
