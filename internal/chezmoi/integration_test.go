@@ -335,6 +335,15 @@ func TestIntegration_Unmanaged_FindsSeededFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, ".unmanagedfile"), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// A directory with a file inside: only the file should be listed, not the directory.
+	dir := filepath.Join(home, ".unmanageddir")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	inner := filepath.Join(dir, "inner")
+	if err := os.WriteFile(inner, []byte("y\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	cli := newTestClient(t, home)
 	paths, err := cli.Unmanaged(context.Background())
 	if err != nil {
@@ -349,6 +358,9 @@ func TestIntegration_Unmanaged_FindsSeededFile(t *testing.T) {
 		}
 		if p == managedTarget {
 			t.Errorf("managed .testfile must not appear in unmanaged list")
+		}
+		if p == dir {
+			t.Errorf("unmanaged list must contain files, not directories: got %s", p)
 		}
 	}
 	if !found {

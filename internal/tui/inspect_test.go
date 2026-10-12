@@ -345,3 +345,56 @@ func TestInspectList_UnmanagedViewShownFromBarClick(t *testing.T) {
 		t.Fatalf("expected Unmanaged, got %v", m.activeTab)
 	}
 }
+
+// The window border must stay visible no matter how many rows or how long the messages are.
+// Wrapping previously pushed the view past the terminal height and scrolled the top border off.
+func TestInspect_ViewNeverExceedsTerminalHeight(t *testing.T) {
+	const h = 24
+	manyDoctor := func() []chezmoi.DoctorCheck {
+		var cs []chezmoi.DoctorCheck
+		for i := 0; i < 40; i++ {
+			cs = append(cs, chezmoi.DoctorCheck{
+				Result: "ok", Check: "check",
+				Message: "a fairly long diagnostic message that would wrap the width easily and overflow",
+			})
+		}
+		return cs
+	}
+	t.Run("doctor", func(t *testing.T) {
+		b := sampleBackend()
+		b.doctor = manyDoctor()
+		m := gotoInspectTab(t, loadedModel(t, b), tabDoctor)
+		assertHeight(t, stripANSI(goldenView(t, m, 100, h)), h)
+	})
+	t.Run("unmanaged", func(t *testing.T) {
+		b := sampleBackend()
+		for i := 0; i < 40; i++ {
+			b.unmanaged = append(b.unmanaged, "/Users/x/very/deep/nested/path/.config/app/file_"+strings.Repeat("y", i))
+		}
+		m := gotoInspectTab(t, loadedModel(t, b), tabUnmanaged)
+		assertHeight(t, stripANSI(goldenView(t, m, 100, h)), h)
+	})
+}
+
+// assertHeight fails when the rendered view is taller than the terminal, which clips the top border.
+func assertHeight(t *testing.T, view string, maxLines int) {
+	t.Helper()
+	lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
+	if len(lines) > maxLines {
+		t.Errorf("view is %d lines tall, exceeds terminal height %d -> top border clipped", len(lines), maxLines)
+	}
+	if !strings.HasPrefix(lines[0], "╭") {
+		t.Errorf("top border missing: %q", lines[0])
+	}
+}
+
+// The version label must appear in the chrome so users can tell builds apart.
+func TestModel_ShowsVersionLabel(t *testing.T) {
+	m := loadedModel(t, sampleBackend())
+	if m.versionLabel == "" {
+		t.Fatal("versionLabel should be populated")
+	}
+	if view := stripANSI(m.View()); !strings.Contains(view, m.versionLabel) {
+		t.Errorf("view should show version label %q:\n%s", m.versionLabel, view)
+	}
+}

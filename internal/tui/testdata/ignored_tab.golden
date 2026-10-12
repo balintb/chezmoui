@@ -5,5 +5,5 @@
 │     .cache/appstate                                                                              │
 │                                                                                                  │
 │ ignored by chezmoi (see .chezmoiignore)                                                          │
-│ ↑/↓ scroll · R refresh · tab switch · q quit                                                     │
+│ ↑/↓ scroll · R refresh · tab switch · q quit                                        chezmoui dev │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/balintb/chezmoui/internal/buildinfo"
 	"github.com/balintb/chezmoui/internal/chezmoi"
 	"github.com/balintb/chezmoui/internal/config"
 	"github.com/charmbracelet/bubbles/key"
@@ -250,6 +251,7 @@ type Model struct {
 	session sessionData
 
 	width, height int
+	versionLabel  string
 	status        string
 	err           error
 	retry         tea.Cmd
@@ -268,6 +270,7 @@ func NewModel(cli Backend) Model {
 		unmanagedSel:  map[string]bool{},
 		inspectLoaded: map[tabID]bool{},
 		filterInput:   newFilterInput(),
+		versionLabel:  buildinfo.Label(),
 		loading:       true,
 	}
 }
@@ -1434,7 +1437,21 @@ func attrDetail(attrs []chezmoi.Attribute) string {
 	return strings.Join(names, ", ")
 }
 
+// contextHelp renders the bottom hint line, with the app version right-aligned at the end.
 func (m Model) contextHelp() string {
+	help := m.contextHelpLine()
+	if m.versionLabel == "" {
+		return help
+	}
+	bw, _ := m.bodyDims()
+	version := mutedStyle.Render(m.versionLabel)
+	if gap := bw - lipgloss.Width(help) - lipgloss.Width(version); gap > 0 {
+		return help + strings.Repeat(" ", gap) + version
+	}
+	return help
+}
+
+func (m Model) contextHelpLine() string {
 	if m.filtering {
 		return mutedStyle.Render("type to filter · enter keep · esc clear")
 	}

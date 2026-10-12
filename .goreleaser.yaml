@@ -26,9 +26,9 @@ builds:
   - -trimpath
   ldflags:
   - -s -w
-  - -X main.version={{.Version}}
-  - -X main.commit={{.Commit}}
-  - -X main.date={{.Date}}
+  - -X github.com/balintb/chezmoui/internal/buildinfo.Version={{.Version}}
+  - -X github.com/balintb/chezmoui/internal/buildinfo.Commit={{.Commit}}
+  - -X github.com/balintb/chezmoui/internal/buildinfo.Date={{.Date}}
 
 archives:
 - id: cmui

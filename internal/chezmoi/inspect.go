@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-// Unmanaged lists destination paths that chezmoi does not manage. Absolute paths are returned so they can be fed straight to `add`.
+// Unmanaged lists destination file paths that chezmoi does not manage. Directories are excluded via --include: they are container paths, not dotfiles, and `add` walks their contents anyway. Absolute paths are returned so they can be fed straight to `add`.
 func (c *Client) Unmanaged(ctx context.Context) ([]string, error) {
-	out, err := c.run(ctx, "unmanaged", "--path-style=absolute")
+	out, err := c.run(ctx, "unmanaged", "--include=files,symlinks", "--path-style=absolute")
 	if err != nil {
 		return nil, err
 	}

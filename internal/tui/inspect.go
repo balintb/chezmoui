@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type unmanagedLoadedMsg struct{ paths []string }
@@ -274,9 +275,10 @@ func (m Model) viewPathList(title string, items []string, cursor int, selected m
 			}
 			line := "  " + mark + " " + shortenHome(items[i])
 			if i == cursor {
-				return cursorStyle.Render(padTo(line, m.bodyWidth()))
+				line = cursorStyle.Render(padTo(line, m.bodyWidth()))
 			}
-			return line
+			// Truncate so long paths never wrap and push the window border off-screen.
+			return ansi.Truncate(line, m.bodyWidth(), "…")
 		}))
 	}
 
@@ -340,12 +342,15 @@ func (m Model) viewDoctor() string {
 	} else {
 		b.WriteString(renderWindow(len(m.doctor), m.doctorCursor, height, func(i int) string {
 			c := m.doctor[i]
-			line := fmt.Sprintf("  %-8s %-24s %s", c.Result, c.Check, c.Message)
+			var line string
 			if i == m.doctorCursor {
-				return cursorStyle.Render(padTo(line, m.bodyWidth()))
+				line = cursorStyle.Render(padTo(fmt.Sprintf("  %-8s %-24s %s", c.Result, c.Check, c.Message), m.bodyWidth()))
+			} else {
+				line = doctorResultStyle(c.Result).Render(fmt.Sprintf("  %-8s", c.Result)) +
+					" " + fmt.Sprintf("%-24s %s", c.Check, c.Message)
 			}
-			return doctorResultStyle(c.Result).Render(fmt.Sprintf("  %-8s", c.Result)) +
-				" " + fmt.Sprintf("%-24s %s", c.Check, c.Message)
+			// Truncate so long messages never wrap and push the window border off-screen.
+			return ansi.Truncate(line, m.bodyWidth(), "…")
 		}))
 	}
 
